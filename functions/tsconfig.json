@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022"], "module": "ESNext", "moduleResolution": "bundler",
+    "resolveJsonModule": true, "skipLibCheck": true, "noEmit": true, "strict": true,
+    "types": ["@cloudflare/workers-types", "node", "vitest/globals"]
+  },
+  "include": ["./**/*.ts", "../src/data/*.json"]
+}

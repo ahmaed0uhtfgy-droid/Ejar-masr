@@ -1,0 +1,47 @@
+{
+  "name": "ejar-masr",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p functions/tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "gen:data": "node scripts/gen-locations.mjs && node scripts/gen-indexes.mjs",
+    "preview": "wrangler pages dev dist"
+  },
+  "dependencies": {
+    "firebase": "^11.0.0",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@eslint/js": "^9.15.0",
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.0.0",
+    "@types/leaflet": "^1.9.12",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "egydata": "^1.1.1",
+    "eslint": "^9.15.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.12.0",
+    "jose": "^5.9.6",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.6"
+  }
+}

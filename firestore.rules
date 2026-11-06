@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function me() { return userDoc(request.auth.uid).data; }
+    function isAdmin() { return hasProfile() && me().role == 'admin'; }
+    function isActiveUser() { return hasProfile() && me().get('banned', false) == false; }
+    function cfg() {
+      return exists(/databases/$(database)/documents/settings/app)
+        ? get(/databases/$(database)/documents/settings/app).data
+        : {'minImages': 1, 'maxImages': 10, 'defaultAdDays': 0};
+    }
+    function validUnit(d) {
+      return d.title is string && d.title.size() >= 5 && d.title.size() <= 120
+        && d.description is string && d.description.size() <= 3000
+        && d.typeId is string && d.typeId.size() > 0 && d.typeId.size() <= 60
+        && d.rentType in ['monthly', 'daily']
+        && d.price is number && d.price > 0 && d.price < 100000000
+        && d.governorateId is string && d.areaId is string
+        && d.rooms is number && d.rooms >= 0 && d.rooms <= 100
+        && d.bathrooms is number && d.bathrooms >= 0 && d.bathrooms <= 100
+        && d.area is number && d.area >= 0 && d.area <= 100000
+        && d.audience in ['all', 'families', 'singles']
+        && d.images is list && d.images.size() >= cfg().minImages && d.images.size() <= cfg().maxImages
+        && d.amenities is list && d.amenities.size() <= 40
+        && (d.lat == null || (d.lat is number && d.lat >= 21.5 && d.lat <= 32 && d.lng is number && d.lng >= 24.5 && d.lng <= 37));
+    }
+    function validContacts(c) {
+      return c.phone is string && c.phone.matches('^[0-9+ ]{8,20}$')
+        && c.whatsapp is string && (c.whatsapp == '' || c.whatsapp.matches('^[0-9+ ]{8,20}$'));
+    }
+    function expiryOk(d) {
+      return cfg().get('defaultAdDays', 0) == 0
+        ? d.expiresAt == null
+        : (d.expiresAt is timestamp && d.expiresAt <= request.time + duration.value(cfg().defaultAdDays, 'd'));
+    }
+
+    // ---------- settings (public read, admin write) ----------
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'role', 'accountType', 'banned', 'verified', 'createdAt'])
+        && request.resource.data.role == 'user' && request.resource.data.banned == false && request.resource.data.verified == false
+        && request.resource.data.accountType in ['owner', 'broker']
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60
+        && request.resource.data.createdAt == request.time;
+      // Users can only touch displayName / accountType; role, banned and verified are admin-only.
+      allow update: if (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'accountType'])
+          && request.resource.data.accountType in ['owner', 'broker']
+          && request.resource.data.displayName.size() <= 60)
+        || isAdmin();
+      allow delete: if isAdmin();
+
+      match /favorites/{unitId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if isActiveUser() && request.auth.uid == uid;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+      match /savedSearches/{id} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create: if isActiveUser() && request.auth.uid == uid && request.resource.data.query is string && request.resource.data.query.size() <= 500;
+        allow update: if signedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastCheckedAt']);
+      }
+      match /notifications/{id} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow update: if signedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if isAdmin() || (isActiveUser() && request.auth.uid == uid && request.resource.data.type == 'saved-search');
+      }
+    }
+
+    // ---------- units (public read) ----------
+    match /units/{id} {
+      allow read: if true;
+      allow create: if isActiveUser() && validUnit(request.resource.data)
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.hiddenByAdmin == false
+        && request.resource.data.durationMode == 'default'
+        && request.resource.data.ownerVerified == me().get('verified', false)
+        && request.resource.data.ownerType == me().accountType
+        && request.resource.data.createdAt == request.time
+        && expiryOk(request.resource.data);
+      allow update: if isAdmin()
+        || (isActiveUser() && resource.data.ownerId == request.auth.uid
+          && resource.data.status != 'removed'
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'createdAt', 'expiresAt', 'durationMode', 'ownerVerified', 'hiddenByAdmin'])
+          && request.resource.data.status in ['active', 'hidden', 'rented']
+          && !(resource.data.hiddenByAdmin == true && request.resource.data.status == 'active')
+          && (request.resource.data.ownerType == resource.data.ownerType || request.resource.data.ownerType == me().accountType)
+          && validUnit(request.resource.data));
+      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+    }
+
+    // ---------- contact details: never readable by regular clients; reveal goes through /api/reveal ----------
+    match /contacts/{unitId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if isActiveUser() && request.resource.data.ownerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/units/$(unitId)).data.ownerId == request.auth.uid
+        && validContacts(request.resource.data);
+      allow update: if isAdmin()
+        || (isActiveUser() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId && validContacts(request.resource.data));
+      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+    }
+
+    // ---------- server-written collections (Pages Functions use the service account, which bypasses rules) ----------
+    match /unitStats/{unitId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.ownerId == request.auth.uid);
+      allow write: if false;
+    }
+    match /revealLogs/{id} { allow read: if isAdmin(); allow write: if false; }
+    match /revealCounts/{id} { allow read: if isAdmin(); allow write: if false; }
+
+    // ---------- reports ----------
+    match /reports/{id} {
+      allow create: if isActiveUser()
+        && id == request.auth.uid + '_' + request.resource.data.unitId
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'new'
+        && request.resource.data.reason in ['unavailable', 'wrong-info', 'scam', 'duplicate', 'other']
+        && request.resource.data.note is string && request.resource.data.note.size() <= 500
+        && request.resource.data.createdAt == request.time;
+      allow read, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- audit log: append-only, admin only ----------
+    match /auditLogs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.adminId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

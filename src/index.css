@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-ink: 18 49 59;       /* Nile ink */
+  --c-paper: 245 248 248;  /* cool limestone */
+  --c-surface: 255 255 255;
+  --c-line: 214 224 226;
+  --c-mute: 98 120 128;
+  --c-nile: 15 124 134;
+  --c-nile-dark: 10 88 96;
+  --c-sand: 198 146 20;    /* date-palm amber, badges only */
+  --c-danger: 178 42 42;
+}
+.dark {
+  --c-ink: 232 241 242;
+  --c-paper: 12 26 31;
+  --c-surface: 19 38 45;
+  --c-line: 40 66 75;
+  --c-mute: 148 172 180;
+  --c-nile: 52 178 190;
+  --c-nile-dark: 22 128 139;
+  --c-sand: 230 176 56;
+  --c-danger: 232 96 96;
+}
+
+@layer base {
+  html { font-family: 'IBM Plex Sans Arabic', Tahoma, sans-serif; }
+  body { @apply bg-paper text-ink antialiased; line-height: 1.8; }
+  h1, h2, h3 { font-family: 'Reem Kufi', Tahoma, sans-serif; line-height: 1.4; }
+  :focus-visible { outline: 3px solid rgb(var(--c-nile)); outline-offset: 2px; border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+}
+
+@layer components {
+  .field { @apply w-full rounded-field border border-line bg-surface px-3 py-2.5 text-ink placeholder:text-mute focus:border-nile; }
+  .label { @apply mb-1 block text-sm font-medium; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-field px-4 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn bg-nile-dark text-white hover:bg-nile hover:text-paper dark:text-paper; }
+  .btn-ghost { @apply btn border border-line bg-surface hover:border-nile; }
+  .btn-danger { @apply btn bg-danger text-white dark:text-paper; }
+  .panel { @apply rounded-panel border border-line bg-surface; }
+  .chip { @apply inline-flex items-center rounded-full border border-line px-2.5 py-0.5 text-xs text-mute; }
+}
+
+.leaflet-container { font-family: inherit; direction: ltr; }
