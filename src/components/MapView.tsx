@@ -21,7 +21,7 @@ export function MapView({ units, height = 480 }: { units: Unit[]; height?: numbe
       if (u.lat == null || u.lng == null) continue
       const icon = L.divIcon({
         className: '',
-        html: `<span style="background:#0A5860;color:#fff;padding:2px 8px;border-radius:999px;font:600 12px Tahoma;white-space:nowrap;border:2px solid #fff;display:inline-block">${fmtNum(u.price)}</span>`,
+        html: `<span style="background:#0B1B3A;color:#F4D98A;padding:2px 8px;border-radius:999px;font:600 12px Tahoma;white-space:nowrap;border:2px solid #D4A537;display:inline-block">${fmtNum(u.price)}</span>`,
         iconSize: [60, 24], iconAnchor: [30, 12],
       })
       const m = L.marker([u.lat, u.lng], { icon, title: u.title }).addTo(map)

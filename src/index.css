@@ -3,25 +3,27 @@
 @tailwind utilities;
 
 :root {
-  --c-ink: 18 49 59;       /* Nile ink */
-  --c-paper: 245 248 248;  /* cool limestone */
+  /* Brand: royal navy + Egyptian gold (from the logo). Token names kept so no component needs renaming:
+     nile = gold accent (text/borders), nile-dark = primary button fill (navy in light, gold in dark). */
+  --c-ink: 11 27 58;        /* royal navy */
+  --c-paper: 250 247 240;   /* warm cream */
   --c-surface: 255 255 255;
-  --c-line: 214 224 226;
-  --c-mute: 98 120 128;
-  --c-nile: 15 124 134;
-  --c-nile-dark: 10 88 96;
-  --c-sand: 198 146 20;    /* date-palm amber, badges only */
+  --c-line: 226 219 203;
+  --c-mute: 90 98 120;
+  --c-nile: 138 99 8;       /* deep gold, AA on white/cream */
+  --c-nile-dark: 11 27 58;  /* navy button fill */
+  --c-sand: 138 99 8;       /* badges */
   --c-danger: 178 42 42;
 }
 .dark {
-  --c-ink: 232 241 242;
-  --c-paper: 12 26 31;
-  --c-surface: 19 38 45;
-  --c-line: 40 66 75;
-  --c-mute: 148 172 180;
-  --c-nile: 52 178 190;
-  --c-nile-dark: 22 128 139;
-  --c-sand: 230 176 56;
+  --c-ink: 240 235 220;
+  --c-paper: 8 18 40;       /* midnight navy */
+  --c-surface: 14 29 58;
+  --c-line: 36 54 92;
+  --c-mute: 156 168 192;
+  --c-nile: 226 184 78;     /* bright gold */
+  --c-nile-dark: 212 165 55; /* gold button fill (navy text) */
+  --c-sand: 226 184 78;
   --c-danger: 232 96 96;
 }
 

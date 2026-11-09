@@ -4,6 +4,7 @@ import { ar } from '../i18n/ar'
 import { useAuth } from '../contexts/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 import { ConfigNotice } from './ui'
+import { Logo } from './Logo'
 
 const linkCls = ({ isActive }: { isActive: boolean }) => `rounded-field px-3 py-2 hover:bg-line/60 ${isActive ? 'font-semibold text-nile' : ''}`
 
@@ -16,7 +17,7 @@ export function Layout() {
       <ConfigNotice />
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-          <Link to="/" className="font-display text-xl font-bold text-nile" onClick={close}>{ar.brand}</Link>
+          <Link to="/" className="flex items-center gap-2.5 font-display text-xl font-bold text-ink" onClick={close}><Logo size={38} uid="hdr" />{ar.brand}</Link>
           <nav className="ms-4 hidden items-center gap-1 md:flex" aria-label="التنقل الرئيسي">
             <NavLink to="/search" className={linkCls}>{ar.nav.search}</NavLink>
             <NavLink to="/compare" className={linkCls}>{ar.nav.compare}</NavLink>
@@ -59,6 +60,7 @@ export function Layout() {
       <main className="flex-1"><Outlet /></main>
       <footer className="mt-16 border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-mute">
+          <Link to="/" className="flex w-fit items-center gap-2.5 font-display text-lg font-bold text-ink"><Logo size={34} uid="ftr" />{ar.brand}</Link>
           <nav className="flex flex-wrap gap-x-5 gap-y-2" aria-label="روابط الموقع">
             <Link to="/about">{ar.footer.about}</Link>
             <Link to="/terms">{ar.footer.terms}</Link>
