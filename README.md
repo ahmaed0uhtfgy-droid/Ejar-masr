@@ -45,3 +45,9 @@ npm run dev
 - `src/i18n/ar.ts` → `contactEmail` (إيميل صفحة تواصل معنا).
 - `src/content/landing.ts` → نص محلي حقيقي لكل محافظة (القوالب بتدي عنوان/وصف/أسئلة فقط، النص الفريد لازم يتكتب بإيدك).
 - مفيش صورة OG افتراضية للموقع (صور الإعلانات بتتحقن تلقائيًا). ضيف `public/og.png` لو عايز.
+
+## حل المشاكل الشائعة
+- **403 permission-denied على `units`**: القواعد مش منشورة. نفّذ `firebase use ejar-masr-5301c && firebase deploy --only firestore:rules,firestore:indexes`.
+- **"انتهت الجلسة" أو 401 عند رفع الصور**: افتح `https://ejar-masr.pages.dev/api/health`. كل القيم لازم `true` و`serviceAccount: "ok"` و`projectMatches: true`. لو لأ، صلّح المتغيرات في Cloudflare (Production) وأعد النشر (Redeploy).
+- **400 على signInWithPassword**: بريد/كلمة سر غلط، أو Email/Password مش مفعّل في Firebase Authentication.
+- تحذير `Cross-Origin-Opener-Policy` مع تسجيل الدخول بجوجل: عادي ومبيأثرش.

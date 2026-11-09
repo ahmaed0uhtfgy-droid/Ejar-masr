@@ -22,8 +22,18 @@ export async function requireUser(request: Request, env: Env, opts: { admin?: bo
   const h = request.headers.get('Authorization') ?? ''
   const token = h.startsWith('Bearer ') ? h.slice(7) : ''
   if (!token) throw new HttpError(401, 'unauthenticated', 'سجّل دخولك الأول')
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT) {
+    console.error('Missing FIREBASE_PROJECT_ID / FIREBASE_SERVICE_ACCOUNT in Cloudflare env')
+    throw new HttpError(500, 'server-misconfigured', 'إعدادات السيرفر ناقصة (FIREBASE_PROJECT_ID). راجع متغيرات Cloudflare Pages')
+  }
   let uid: string
-  try { uid = await verifyIdToken(token, env.FIREBASE_PROJECT_ID) } catch { throw new HttpError(401, 'bad-token', 'انتهت الجلسة، سجّل دخولك تاني') }
+  try { uid = await verifyIdToken(token, env.FIREBASE_PROJECT_ID) } catch (e) {
+    const name = e instanceof Error ? e.name : 'unknown'
+    console.error('verifyIdToken failed:', name, e instanceof Error ? e.message : e)
+    if (name === 'JWTExpired') throw new HttpError(401, 'token-expired', 'انتهت الجلسة، سجّل دخولك تاني')
+    if (name === 'JWTClaimValidationFailed') throw new HttpError(401, 'project-mismatch', 'مشروع Firebase في السيرفر مختلف عن مشروع الموقع. راجع FIREBASE_PROJECT_ID')
+    throw new HttpError(401, 'bad-token', 'تعذر التحقق من الجلسة، سجّل دخولك تاني')
+  }
   const profile = await getDocument(env, `users/${uid}`)
   if (!profile) throw new HttpError(403, 'no-profile', 'الحساب غير مكتمل')
   if (profile.data.banned === true) throw new HttpError(403, 'banned', 'حسابك محظور')
