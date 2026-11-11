@@ -10,6 +10,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     CLOUDINARY_CLOUD_NAME: Boolean(env.CLOUDINARY_CLOUD_NAME),
     CLOUDINARY_API_KEY: Boolean(env.CLOUDINARY_API_KEY),
     CLOUDINARY_API_SECRET: Boolean(env.CLOUDINARY_API_SECRET),
+    PAYMOB_SECRET_KEY: Boolean(env.PAYMOB_SECRET_KEY),
+    PAYMOB_PUBLIC_KEY: Boolean(env.PAYMOB_PUBLIC_KEY),
+    PAYMOB_INTEGRATION_IDS: Boolean(env.PAYMOB_INTEGRATION_IDS),
+    PAYMOB_HMAC_SECRET: Boolean(env.PAYMOB_HMAC_SECRET),
   }
   let serviceAccount: 'ok' | 'failed' | 'missing' = 'missing'
   let serviceAccountProject = ''
