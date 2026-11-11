@@ -68,7 +68,7 @@ export const PAY_PUBLIC_DEFAULTS: PayPublicSettings = {
 /** Public payment settings (settings/payments, readable by everyone). 1 read, cached for the session. */
 let paySettingsPromise: Promise<PayPublicSettings> | null = null
 export function loadPaySettings(): Promise<PayPublicSettings> {
-  paySettingsPromise ??= getDoc(doc(db, 'settings', 'payments')).then((s) => {
+  paySettingsPromise ??= getDoc(doc(db, 'settings', 'payments')).then((s): PayPublicSettings => {
     const x = s.data() ?? {}
     const cyc = Array.isArray(x.cycles) ? (x.cycles as unknown[]).map(Number).filter((c) => [1, 3, 6, 12].includes(c)) : []
     return {
@@ -80,7 +80,7 @@ export function loadPaySettings(): Promise<PayPublicSettings> {
       payoutDays: Number(x.payoutDays ?? 3), refundDays: Number(x.refundDays ?? 7), disputeDays: Number(x.disputeDays ?? 7),
     }
   }).catch(() => PAY_PUBLIC_DEFAULTS)
-  return paySettingsPromise
+  return paySettingsPromise as Promise<PayPublicSettings>
 }
 export function resetPaySettings(): void { paySettingsPromise = null }
 export function usePaySettings(): PayPublicSettings {
@@ -93,11 +93,11 @@ export interface PolicyDoc { visible: boolean; draft: boolean; version: string; 
 let policyPromise: Promise<PolicyDoc> | null = null
 /** settings/policyPage: hide the page, draft banner, and admin-edited sections (null = use the built-in default text). 1 read per session. */
 export function loadPolicy(): Promise<PolicyDoc> {
-  policyPromise ??= getDoc(doc(db, 'settings', 'policyPage')).then((s) => {
+  policyPromise ??= getDoc(doc(db, 'settings', 'policyPage')).then((s): PolicyDoc => {
     const x = s.data() ?? {}
     return { visible: x.visible !== false, draft: x.draft !== false, version: String(x.version ?? '2026-11-11'), sections: Array.isArray(x.sections) && x.sections.length ? (x.sections as PolicyDoc['sections']) : null }
   }).catch(() => ({ visible: true, draft: true, version: '2026-11-11', sections: null }))
-  return policyPromise
+  return policyPromise as Promise<PolicyDoc>
 }
 export const resetPolicy = (): void => { policyPromise = null }
 export function usePolicy(): PolicyDoc | null {
