@@ -25,6 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!PAYABLE.includes(String(pay.data.status))) throw new HttpError(409, 'state', pay.data.status === 'paid' ? 'الدفعة دي اتدفعت بالفعل' : 'الدفعة دي مش متاحة للدفع')
     const lease = await getDocument(env, `leases/${pay.data.leaseId}`)
     if (!lease || lease.data.status !== 'active') throw new HttpError(409, 'lease', 'العقد مش شغال')
+    if (!lease.data.contractConfirmedAt) throw new HttpError(409, 'contract', 'الدفع بيتفتح بعد ما الطرفين يأكدوا إنهم وقّعوا العقد وعاينوا الوحدة')
 
     const all = await runQuery(env, { collection: 'payments', where: [{ field: 'leaseId', op: 'EQUAL', value: pay.data.leaseId }], limit: 100 })
     if (all.some((p) => Number(p.data.index) < Number(pay.data.index) && !['paid', 'cancelled', 'refunded'].includes(String(p.data.status)))) throw new HttpError(409, 'pay-earlier', 'ادفع القسط اللي قبله الأول')

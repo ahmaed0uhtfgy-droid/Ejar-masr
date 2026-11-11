@@ -4,9 +4,9 @@ import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/h
 import { closeLeaseWrites } from '../_lib/leasing'
 import { cairoDayKey, isExpiredDate, isValidDocId } from '../_lib/logic'
 import { buildTerms, feeCents, toCents } from '../_lib/rent'
-import { limitsOf, notifyWrite, paySettings } from '../_lib/rentdb'
+import { limitsOf, notifyWrite, paySettings, splitFee, type FeePayer } from '../_lib/rentdb'
 
-const ACTIONS = ['accept', 'reject', 'cancel', 'end', 'confirm-move-in', 'not-received', 'set-reminder'] as const
+const ACTIONS = ['accept', 'reject', 'cancel', 'end', 'confirm-move-in', 'not-received', 'set-reminder', 'request-cancel', 'confirm-contract'] as const
 type Action = (typeof ACTIONS)[number]
 
 /**
@@ -17,6 +17,8 @@ type Action = (typeof ACTIONS)[number]
  *  end (owner/admin)     : active -> ended, cancels unpaid installments, re-lists the unit
  *  confirm-move-in (tenant): "I received the unit" -> held rent is released to the owner (queued for the admin transfer)
  *  not-received (tenant) : flags the lease for the admin; money stays held
+ *  request-cancel (tenant): paid but not yet confirmed move-in, only if the admin allows it -> flags the lease for the admin (refund is recorded by the admin)
+ *  confirm-contract (owner/tenant): each side confirms that the contract was really signed and the unit was inspected; payment opens only when BOTH did
  *  set-reminder (owner)  : days before each installment on which the tenant gets reminded
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -59,11 +61,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const pct = Number(L.feePercent ?? 0), deposit = Number(L.depositCents ?? 0)
       const writes: Write[] = terms.schedule.map((s) => {
         const rent = toCents(s.amount), fee = feeCents(rent, pct), dep = s.index === 0 ? deposit : 0
+        const sp = splitFee(fee, (L.feePayer as FeePayer) ?? 'owner')
         return {
           kind: 'create', path: `payments/${leaseId}_${s.index}`,
           data: {
             leaseId, index: s.index, unitId, ownerId: L.ownerId, tenantId: L.tenantId,
-            amount: (rent + dep) / 100, amountCents: rent + dep, depositCents: dep, feeCents: fee, netCents: rent - fee,
+            amount: (rent + dep + sp.tenant) / 100, amountCents: rent + dep + sp.tenant, depositCents: dep, feeCents: fee, tenantFeeCents: sp.tenant, netCents: rent - sp.owner,
             from: s.from, to: s.to, dueDate: s.dueDate, status: 'due', payoutStatus: 'none', createdAt: now,
           },
         }
@@ -72,7 +75,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         set('active', { reminderDays: days }),
         // The unit stays hidden from search until the agreed lease end (the daily sweep re-lists it), and the owner cannot re-open it meanwhile.
         { kind: 'upsert', path: `units/${unitId}`, data: { status: 'rented', rentedUntil: terms.endDate, rentedLeaseId: leaseId, lockedUntil: new Date(`${terms.endDate}T00:00:00Z`) } },
-        notifyWrite(String(L.tenantId), `lease_${leaseId}_acc`, 'تم قبول طلب الإيجار', `المالك وافق على "${title}". ادفع القسط الأول من صفحة إيجاراتي. الفلوس بتتحجز في الموقع ومبتتحولش للمالك إلا لما تأكد إنك استلمت الوحدة.`, unitId),
+        notifyWrite(String(L.tenantId), `lease_${leaseId}_acc`, 'تم قبول طلب الإيجار', `المالك وافق على "${title}". قابل المالك وعاين الوحدة ووقّعوا العقد، وبعدها أكّدوا الاتنين من صفحة إيجاراتي وساعتها الدفع بيتفتح. الفلوس بتتحجز في الموقع ومبتتحولش للمالك إلا لما تأكد إنك استلمت الوحدة.`, unitId),
       )
       const others = await runQuery(env, { collection: 'leases', where: [{ field: 'unitId', op: 'EQUAL', value: unitId }], limit: 50 })
       for (const o of others.filter((x) => x.id !== leaseId && x.data.status === 'requested').slice(0, 20)) {
@@ -81,6 +84,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       await commit(env, writes)
       return json({ status: 'active' })
+    }
+
+    if (action === 'confirm-contract') {
+      if (!isOwner && !isTenant) throw new HttpError(403, 'forbidden', 'مش مسموح')
+      if (L.status !== 'active') throw new HttpError(409, 'state', 'العقد مش شغال')
+      if (L.contractConfirmedAt) throw new HttpError(409, 'state', 'اتأكد توقيع العقد قبل كده')
+      const field = isOwner ? 'contractOwnerAt' : 'contractTenantAt'
+      const both = isOwner ? !!L.contractTenantAt : !!L.contractOwnerAt
+      const other = isOwner ? String(L.tenantId) : String(L.ownerId)
+      const w: Write[] = [{ kind: 'upsert', path: `leases/${leaseId}`, data: { [field]: now, updatedAt: now, ...(both ? { contractConfirmedAt: now } : {}) } }]
+      w.push(both
+        ? notifyWrite(other, `lease_${leaseId}_cc2`, 'اتأكد توقيع العقد', `الطرفين أكدوا توقيع العقد ومعاينة "${title}". دلوقتي المستأجر يقدر يدفع من صفحة إيجاراتي.`, unitId)
+        : notifyWrite(other, `lease_${leaseId}_cc1_${isOwner ? 'o' : 't'}`, 'الطرف التاني أكد توقيع العقد', `${isOwner ? 'المالك' : 'المستأجر'} أكد إن العقد اتوقّع والوحدة اتعاينت (${title}). لو ده صح أكّد من عندك كمان عشان الدفع يتفتح.`, unitId))
+      if (both) w.push(notifyWrite(String(L.tenantId), `lease_${leaseId}_cc2t`, 'الدفع اتفتح', `تقدر تدفع القسط الأول لـ "${title}" من صفحة إيجاراتي.`, unitId))
+      await commit(env, w)
+      return json({ contractConfirmed: both })
+    }
+
+    if (action === 'request-cancel') {
+      if (!isTenant) throw new HttpError(403, 'forbidden', 'مش مسموح')
+      if (S.cancelAfterPayment !== 'request') throw new HttpError(409, 'blocked', 'الإلغاء بعد الدفع مش متاح. كلّم الإدارة.')
+      if (L.status !== 'active' || !L.firstPaidAt || L.moveInConfirmedAt) throw new HttpError(409, 'state', 'مينفعش تطلب إلغاء في الحالة دي')
+      if (L.cancelRequestedAt) throw new HttpError(409, 'state', 'طلب الإلغاء اتبعت قبل كده')
+      await commit(env, [{ kind: 'upsert', path: `leases/${leaseId}`, data: { cancelRequestedAt: now, updatedAt: now } }, notifyWrite(String(L.ownerId), `lease_${leaseId}_cr`, 'المستأجر طلب إلغاء العقد', `المستأجر طلب إلغاء العقد على "${title}". الإدارة هتراجع الطلب.`, unitId)])
+      return json({ cancelRequested: true })
     }
 
     if (action === 'set-reminder') {

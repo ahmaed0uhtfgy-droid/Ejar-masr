@@ -3,7 +3,7 @@ import { commit, getDocument, runQuery } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { cairoDayKey, isExpiredDate, isValidDocId } from '../_lib/logic'
 import { buildTerms, toCents } from '../_lib/rent'
-import { PHONE_RE, depositModeOf, limitsOf, newId, notifyWrite, paySettings } from '../_lib/rentdb'
+import { PHONE_RE, depositModeOf, limitsOf, newId, notifyWrite, paySettings, policyRequired } from '../_lib/rentdb'
 
 /**
  * POST /api/lease-request { unitId, startDate, durationMonths?, days?, cycleMonths?, phone, note? }
@@ -17,6 +17,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!S.paymentsEnabled) throw new HttpError(503, 'disabled', 'الإيجار والدفع الإلكتروني متوقف مؤقتًا')
     const b = await readJson<Record<string, unknown>>(request)
     if (!isValidDocId(b.unitId)) throw new HttpError(400, 'bad-id', 'رقم الإعلان غير صحيح')
+    const needPolicy = await policyRequired(env)
+    if (needPolicy && (typeof b.acceptedPolicy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.acceptedPolicy))) throw new HttpError(400, 'policy', 'لازم توافق على سياسة الإيجار والدفع')
     const phone = String(b.phone ?? '').trim()
     if (!PHONE_RE.test(phone)) throw new HttpError(400, 'bad-phone', 'اكتب رقم تليفون صحيح')
     const note = String(b.note ?? '').slice(0, 300)
@@ -56,7 +58,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           days: rentType === 'daily' ? Number(b.days) : null,
           total: terms.total, installments: terms.schedule.length, feePercent: S.platformFeePercent,
           depositMode: depositCents ? depositMode : 'none', depositCents, depositStatus: depositCents ? 'unpaid' : 'none',
-          status: 'requested', createdAt: now, updatedAt: now,
+          status: 'requested', policyVersion: typeof b.acceptedPolicy === 'string' ? b.acceptedPolicy : '', policyAcceptedAt: needPolicy ? now : null, feePayer: S.feePayer, cancelFeePercent: S.cancelFeePercent, createdAt: now, updatedAt: now,
         },
       },
       notifyWrite(ownerId, `lease_${id}_req`, 'طلب إيجار جديد', `${tenantName || 'مستخدم'} طلب استئجار "${String(unit.data.title ?? '').slice(0, 60)}". راجع الطلب من لوحة المعلن.`, String(b.unitId)),

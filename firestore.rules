@@ -146,7 +146,7 @@ service cloud.firestore {
       allow read: if signedIn() && (resource.data.tenantId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin());
       // Admin may only record the payout (transfer to the owner); status and amounts are server-only.
       allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payoutStatus', 'payoutAt', 'payoutRef'])
-        && request.resource.data.payoutStatus in ['pending', 'paid', 'cancelled'];
+        && resource.data.payoutStatus == 'pending' && request.resource.data.payoutStatus == 'paid'; // the admin can only record a transfer of released money; escrow (held) money is released only by the tenant's confirmation
       allow create, delete: if false;
     }
 
