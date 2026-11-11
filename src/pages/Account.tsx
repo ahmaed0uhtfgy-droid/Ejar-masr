@@ -11,8 +11,10 @@ import { getUnits } from '../lib/units'
 import type { AccountType, AppNotification, Unit } from '../lib/types'
 import { UnitCard } from '../components/UnitCard'
 import { Empty, ErrorBox, Field, Spinner } from '../components/ui'
+import { PayoutForm } from '../components/PayoutForm'
+import { rt } from '../i18n/rent'
 
-type Tab = 'favorites' | 'saved' | 'notifications' | 'profile'
+type Tab = 'favorites' | 'saved' | 'notifications' | 'profile' | 'payout'
 interface Saved { id: string; query: string }
 
 export default function Account() {
@@ -58,7 +60,7 @@ export default function Account() {
     } catch { toast.err(ar.errors.generic) }
   }
 
-  const tabs: [Tab, string][] = [['favorites', ar.account.favorites], ['saved', ar.account.saved], ['notifications', ar.account.notifications], ['profile', ar.account.profile]]
+  const tabs: [Tab, string][] = [['favorites', ar.account.favorites], ['saved', ar.account.saved], ['notifications', ar.account.notifications], ['profile', ar.account.profile], ['payout', rt.payoutTab]]
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -100,6 +102,7 @@ export default function Account() {
                 ))}
               </ul>
             ))}
+            {tab === 'payout' && <PayoutForm />}
             {tab === 'profile' && (
               <form className="panel max-w-md space-y-4 p-5" onSubmit={(e) => void saveProfile(e)}>
                 <Field label={ar.auth.name}><input className="field" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} /></Field>

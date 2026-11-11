@@ -15,6 +15,8 @@ import { isQuotaError } from '../lib/errors'
 import type { Unit } from '../lib/types'
 import { Badge, Empty, ErrorBox, Spinner } from '../components/ui'
 import { ReportDialog } from '../components/ReportDialog'
+import { RentRequestDialog } from '../components/RentRequestDialog'
+import { rt } from '../i18n/rent'
 
 const PinPicker = lazy(() => import('../components/PinPicker'))
 
@@ -32,6 +34,7 @@ export default function UnitDetail() {
   const [revealing, setRevealing] = useState(false)
   const [reveal, setRevealErr] = useState('')
   const [reporting, setReporting] = useState(false)
+  const [renting, setRenting] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -165,6 +168,12 @@ export default function UnitDetail() {
               <Link className="btn-primary w-full" to="/login" state={{ from: `/unit/${unit.id}` }}>{ar.unit.loginToReveal}</Link>
             )}
             {reveal && <p className="text-sm text-danger" role="alert">{reveal}</p>}
+            {unit.status === 'active' && !isOwner && (user ? (
+              <button type="button" className="btn-primary w-full" disabled={banned || !profile} onClick={() => setRenting(true)}>{rt.request}</button>
+            ) : (
+              <Link className="btn-primary w-full" to="/login" state={{ from: `/unit/${unit.id}` }}>{rt.loginFirst}</Link>
+            ))}
+            {unit.status === 'active' && !isOwner && <p className="text-xs text-mute">{rt.requestHint}</p>}
             <p className="text-xs text-mute">{ar.unit.safetyHint} <Link className="underline" to="/safety">{ar.footer.safety}</Link></p>
 
             <div className="flex flex-wrap gap-2">
@@ -179,6 +188,7 @@ export default function UnitDetail() {
         </aside>
       </div>
       {reporting && <ReportDialog unit={unit} onClose={() => setReporting(false)} />}
+      {renting && <RentRequestDialog unit={unit} onClose={() => setRenting(false)} />}
     </div>
   )
 }

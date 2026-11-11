@@ -29,6 +29,8 @@ export function mapUnit(id: string, d: DocumentData): Unit {
     ownerType: d.ownerType === 'broker' ? 'broker' : 'owner', ownerVerified: !!d.ownerVerified,
     status: d.status ?? 'active', hiddenByAdmin: !!d.hiddenByAdmin,
     durationMode: d.durationMode === 'custom' ? 'custom' : 'default',
+    depositMode: d.depositMode === 'held-claim' || d.depositMode === 'held-auto' ? d.depositMode : 'none',
+    lockedUntil: toDate(d.lockedUntil), rentedUntil: typeof d.rentedUntil === 'string' ? d.rentedUntil : null,
     createdAt: toDate(d.createdAt), expiresAt: toDate(d.expiresAt),
   }
 }

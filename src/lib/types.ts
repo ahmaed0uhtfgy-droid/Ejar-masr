@@ -2,6 +2,7 @@ export type Role = 'user' | 'admin'
 export type AccountType = 'owner' | 'broker'
 export type RentType = 'monthly' | 'daily'
 export type UnitStatus = 'active' | 'hidden' | 'rented' | 'removed'
+export type DepositMode = 'none' | 'held-claim' | 'held-auto'
 export type Audience = 'all' | 'families' | 'singles'
 export type ReportStatus = 'new' | 'review' | 'done'
 
@@ -62,6 +63,9 @@ export interface Unit {
   status: UnitStatus
   hiddenByAdmin: boolean
   durationMode: 'default' | 'custom'
+  depositMode: DepositMode
+  lockedUntil: Date | null
+  rentedUntil: string | null
   createdAt: Date | null
   expiresAt: Date | null
 }
@@ -111,4 +115,26 @@ export interface ReportDoc {
   note: string
   status: ReportStatus
   createdAt: Date | null
+}
+
+export type LeaseStatus = 'requested' | 'active' | 'rejected' | 'cancelled' | 'ended'
+export type PaymentStatus = 'due' | 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded'
+export type PayoutStatus = 'none' | 'held' | 'pending' | 'paid' | 'cancelled'
+export type DepositStatus = 'none' | 'unpaid' | 'held' | 'claimed' | 'settled'
+
+export interface Lease {
+  id: string; unitId: string; unitTitle: string
+  ownerId: string; ownerName: string; tenantId: string; tenantName: string; tenantPhone: string; note: string
+  rentType: RentType; price: number; startDate: string; endDate: string
+  durationMonths: number | null; cycleMonths: number | null; days: number | null
+  total: number; installments: number; status: LeaseStatus; createdAt: Date | null
+  reminderDays: number | null; firstPaidAt: Date | null; moveInConfirmedAt: Date | null; moveInIssue: boolean; endedAt: Date | null
+  depositMode: DepositMode; depositCents: number; depositStatus: DepositStatus; depositClaimUntil: string; claimCents: number; claimReason: string
+  depositToOwnerCents: number; depositToTenantCents: number; depositTransfer: 'pending' | 'done' | ''; depositRef: string
+}
+
+export interface Payment {
+  id: string; leaseId: string; index: number; unitId: string; ownerId: string; tenantId: string
+  amount: number; depositCents: number; feeCents: number; netCents: number; from: string; to: string; dueDate: string
+  status: PaymentStatus; payoutStatus: PayoutStatus; paidAt: Date | null; payoutAt: Date | null; payoutRef: string
 }

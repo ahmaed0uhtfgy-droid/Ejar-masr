@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { ar } from '../i18n/ar'
+import { rt } from '../i18n/rent'
 import { useAuth } from '../contexts/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 import { ConfigNotice } from './ui'
@@ -28,8 +29,10 @@ export function Layout() {
             {user ? (
               <div className="hidden items-center gap-1 md:flex">
                 <NavLink to="/account" className={linkCls}>{profile?.displayName ?? ar.nav.account}</NavLink>
+                <NavLink to="/rentals" className={linkCls}>{rt.nav}</NavLink>
                 <NavLink to="/dashboard" className={linkCls}>{ar.nav.dashboard}</NavLink>
                 {isAdmin && <NavLink to="/admin" className={linkCls}>{ar.nav.admin}</NavLink>}
+                {isAdmin && <NavLink to="/admin/payments" className={linkCls}>{rt.adminPayments}</NavLink>}
                 <button type="button" className="btn-ghost" onClick={() => void signOut()}>{ar.nav.logout}</button>
               </div>
             ) : (
@@ -46,8 +49,10 @@ export function Layout() {
             {user ? (
               <>
                 <NavLink to="/account" className={linkCls} onClick={close}>{ar.nav.account}</NavLink>
+                <NavLink to="/rentals" className={linkCls} onClick={close}>{rt.nav}</NavLink>
                 <NavLink to="/dashboard" className={linkCls} onClick={close}>{ar.nav.dashboard}</NavLink>
                 {isAdmin && <NavLink to="/admin" className={linkCls} onClick={close}>{ar.nav.admin}</NavLink>}
+                {isAdmin && <NavLink to="/admin/payments" className={linkCls} onClick={close}>{rt.adminPayments}</NavLink>}
                 <button type="button" className="rounded-field px-3 py-2 text-start hover:bg-line/60" onClick={() => { close(); void signOut() }}>{ar.nav.logout}</button>
               </>
             ) : (

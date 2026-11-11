@@ -26,11 +26,16 @@ service cloud.firestore {
         && d.audience in ['all', 'families', 'singles']
         && d.images is list && d.images.size() >= cfg().minImages && d.images.size() <= cfg().maxImages
         && d.amenities is list && d.amenities.size() <= 40
+        && (!('depositMode' in d) || d.depositMode in ['none', 'held-claim', 'held-auto'])
         && (d.lat == null || (d.lat is number && d.lat >= 21.5 && d.lat <= 32 && d.lng is number && d.lng >= 24.5 && d.lng <= 37));
     }
     function validContacts(c) {
       return c.phone is string && c.phone.matches('^[0-9+ ]{8,20}$')
         && c.whatsapp is string && (c.whatsapp == '' || c.whatsapp.matches('^[0-9+ ]{8,20}$'));
+    }
+    // A unit that is rented through the site stays locked (status cannot change, cannot be deleted) until the agreed lease end.
+    function lockedNow() {
+      return resource.data.get('lockedUntil', null) != null && resource.data.lockedUntil > request.time;
     }
     function expiryOk(d) {
       return cfg().get('defaultAdDays', 0) == 0
@@ -71,6 +76,16 @@ service cloud.firestore {
         allow create: if isActiveUser() && request.auth.uid == uid && request.resource.data.query is string && request.resource.data.query.size() <= 500;
         allow update: if signedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastCheckedAt']);
       }
+      // Where the owner wants to receive rent. Readable by the owner and admins only.
+      match /payout/{id} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create, update: if isActiveUser() && request.auth.uid == uid && id == 'main'
+          && request.resource.data.keys().hasOnly(['method', 'holder', 'account'])
+          && request.resource.data.method in ['wallet', 'instapay', 'bank']
+          && request.resource.data.holder is string && request.resource.data.holder.size() >= 3 && request.resource.data.holder.size() <= 80
+          && request.resource.data.account is string && request.resource.data.account.size() >= 6 && request.resource.data.account.size() <= 40;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
       match /notifications/{id} {
         allow read, delete: if signedIn() && request.auth.uid == uid;
         allow update: if signedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
@@ -86,6 +101,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.hiddenByAdmin == false
         && request.resource.data.durationMode == 'default'
+        && !request.resource.data.keys().hasAny(['lockedUntil', 'rentedUntil', 'rentedLeaseId'])
         && request.resource.data.ownerVerified == me().get('verified', false)
         && request.resource.data.ownerType == me().accountType
         && request.resource.data.createdAt == request.time
@@ -93,12 +109,13 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (isActiveUser() && resource.data.ownerId == request.auth.uid
           && resource.data.status != 'removed'
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'createdAt', 'expiresAt', 'durationMode', 'ownerVerified', 'hiddenByAdmin'])
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'createdAt', 'expiresAt', 'durationMode', 'ownerVerified', 'hiddenByAdmin', 'lockedUntil', 'rentedUntil', 'rentedLeaseId'])
+          && !(lockedNow() && request.resource.data.status != resource.data.status)
           && request.resource.data.status in ['active', 'hidden', 'rented']
           && !(resource.data.hiddenByAdmin == true && request.resource.data.status == 'active')
           && (request.resource.data.ownerType == resource.data.ownerType || request.resource.data.ownerType == me().accountType)
           && validUnit(request.resource.data));
-      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid && !lockedNow());
     }
 
     // ---------- contact details: never readable by regular clients; reveal goes through /api/reveal ----------
@@ -119,6 +136,19 @@ service cloud.firestore {
     }
     match /revealLogs/{id} { allow read: if isAdmin(); allow write: if false; }
     match /revealCounts/{id} { allow read: if isAdmin(); allow write: if false; }
+
+    // ---------- rentals: leases and payments are written only by Pages Functions (service account) ----------
+    match /leases/{id} {
+      allow read: if signedIn() && (resource.data.tenantId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+    match /payments/{id} {
+      allow read: if signedIn() && (resource.data.tenantId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin());
+      // Admin may only record the payout (transfer to the owner); status and amounts are server-only.
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payoutStatus', 'payoutAt', 'payoutRef'])
+        && request.resource.data.payoutStatus in ['pending', 'paid', 'cancelled'];
+      allow create, delete: if false;
+    }
 
     // ---------- reports ----------
     match /reports/{id} {

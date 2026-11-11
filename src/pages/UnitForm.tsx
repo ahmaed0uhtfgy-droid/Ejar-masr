@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Timestamp, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ar } from '../i18n/ar'
+import { rt } from '../i18n/rent'
 import { useAuth } from '../contexts/AuthContext'
 import { useSettings } from '../contexts/SettingsContext'
 import { useToast } from '../contexts/ToastContext'
@@ -10,7 +11,7 @@ import { PHONE_RE, addDays } from '../lib/format'
 import { usePageMeta } from '../lib/seo'
 import { getUnit } from '../lib/units'
 import { collection } from 'firebase/firestore'
-import type { Audience, RentType } from '../lib/types'
+import type { Audience, DepositMode, RentType } from '../lib/types'
 import { Empty, ErrorBox, Field, Spinner } from '../components/ui'
 import { ImageUploader } from '../components/ImageUploader'
 import { LocationSelect } from '../components/LocationSelect'
@@ -19,13 +20,13 @@ import type { Pin } from '../components/PinPicker'
 const PinPicker = lazy(() => import('../components/PinPicker'))
 
 interface FormState {
-  title: string; description: string; typeId: string; rentType: RentType; price: string; deposit: string
+  title: string; description: string; typeId: string; rentType: RentType; price: string; deposit: string; depositMode: DepositMode
   govId: string; areaId: string; localityId: string; localityText: string; address: string; pin: Pin | null
   rooms: string; bathrooms: string; area: string; floor: string; furnished: boolean; amenities: string[]
   student: boolean; audience: Audience; images: string[]; phone: string; whatsapp: string
 }
 const EMPTY: FormState = {
-  title: '', description: '', typeId: '', rentType: 'monthly', price: '', deposit: '', govId: '', areaId: '', localityId: '', localityText: '', address: '', pin: null,
+  title: '', description: '', typeId: '', rentType: 'monthly', price: '', deposit: '', depositMode: 'none', govId: '', areaId: '', localityId: '', localityText: '', address: '', pin: null,
   rooms: '1', bathrooms: '1', area: '', floor: '0', furnished: false, amenities: [], student: false, audience: 'all', images: [], phone: '', whatsapp: '',
 }
 const OTHER = '__other'
@@ -56,7 +57,7 @@ export default function UnitForm() {
         if (!u || (u.ownerId !== user.uid && !isAdmin)) { setForbidden(true); return }
         const c = await getDoc(doc(db, 'contacts', id))
         setF({
-          title: u.title, description: u.description, typeId: u.typeId, rentType: u.rentType, price: String(u.price), deposit: u.deposit != null ? String(u.deposit) : '',
+          title: u.title, description: u.description, typeId: u.typeId, rentType: u.rentType, price: String(u.price), deposit: u.deposit != null ? String(u.deposit) : '', depositMode: u.depositMode,
           govId: u.governorateId, areaId: u.areaId, localityId: u.localityId ?? (u.localityName ? OTHER : ''), localityText: u.localityId ? '' : u.localityName, address: u.address,
           pin: u.lat != null && u.lng != null ? { lat: u.lat, lng: u.lng } : null,
           rooms: String(u.rooms), bathrooms: String(u.bathrooms), area: String(u.area), floor: String(u.floor), furnished: u.furnished, amenities: u.amenities,
@@ -101,6 +102,7 @@ export default function UnitForm() {
       const editable = {
         title: f.title.trim(), description: f.description.trim().slice(0, 3000), typeId: f.typeId, typeName: type?.label ?? f.typeId, rentType: f.rentType,
         price: Number(f.price), deposit: f.rentType === 'monthly' && f.deposit.trim() !== '' ? Number(f.deposit) : null,
+        depositMode: f.rentType === 'monthly' && f.deposit.trim() !== '' && Number(f.deposit) > 0 ? f.depositMode : 'none',
         governorateId: f.govId, governorateName: gov?.name ?? '', areaId: f.areaId, areaName: area?.name ?? '',
         localityId: loc?.id ?? null, localityName: loc?.name ?? f.localityText.trim().slice(0, 80), address: f.address.trim().slice(0, 200),
         lat: f.pin?.lat ?? null, lng: f.pin?.lng ?? null,
@@ -163,6 +165,13 @@ export default function UnitForm() {
             </Field>
             <Field label={`${ar.form.price} (${ar.common.currency} / ${f.rentType === 'monthly' ? 'شهر' : 'يوم'})`} error={errors.price}><input className="field" type="number" min={1} inputMode="numeric" value={f.price} onChange={(e) => set('price', e.target.value)} /></Field>
             {f.rentType === 'monthly' && <Field label={ar.form.deposit}><input className="field" type="number" min={0} inputMode="numeric" value={f.deposit} onChange={(e) => set('deposit', e.target.value)} /></Field>}
+            {f.rentType === 'monthly' && Number(f.deposit) > 0 && (
+              <Field label={rt.depositModeLabel} hint={rt.depositModeHint}>
+                <select className="field" value={f.depositMode} onChange={(e) => set('depositMode', e.target.value as DepositMode)}>
+                  {(Object.keys(rt.depositModes) as DepositMode[]).map((m) => <option key={m} value={m}>{rt.depositModes[m]}</option>)}
+                </select>
+              </Field>
+            )}
           </div>
         </section>
 

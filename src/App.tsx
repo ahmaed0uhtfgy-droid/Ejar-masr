@@ -16,6 +16,9 @@ const UnitForm = lazy(() => import('./pages/UnitForm'))
 const Compare = lazy(() => import('./pages/Compare'))
 const Landing = lazy(() => import('./pages/Landing'))
 const Admin = lazy(() => import('./pages/Admin'))
+const Rentals = lazy(() => import('./pages/Rentals'))
+const PayResult = lazy(() => import('./pages/PayResult'))
+const AdminPayments = lazy(() => import('./pages/AdminPayments'))
 const StaticPage = lazy(() => import('./pages/StaticPage'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
@@ -38,7 +41,10 @@ export default function App() {
             <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
             <Route path="dashboard/new" element={<RequireAuth><UnitForm /></RequireAuth>} />
             <Route path="dashboard/units/:id/edit" element={<RequireAuth><UnitForm /></RequireAuth>} />
+            <Route path="rentals" element={<RequireAuth><Rentals /></RequireAuth>} />
+            <Route path="pay/result" element={<RequireAuth><PayResult /></RequireAuth>} />
             <Route path="admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
+            <Route path="admin/payments" element={<RequireAuth admin><AdminPayments /></RequireAuth>} />
             {(['about', 'terms', 'privacy', 'safety', 'contact'] as const).map((p) => <Route key={p} path={p} element={<StaticPage page={p} />} />)}
             <Route path="*" element={<NotFound />} />
           </Route>
