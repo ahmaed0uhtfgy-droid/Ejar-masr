@@ -1,0 +1,15 @@
+name: daily-sweep
+on:
+  schedule: [{ cron: '0 5 * * *' }]
+  workflow_dispatch: {}
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/sweep until nothing is left
+        run: |
+          for i in $(seq 1 30); do
+            out=$(curl -sS -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.SITE_URL }}/api/sweep")
+            echo "$out"
+            echo "$out" | grep -q '"more":true' || exit 0
+          done
