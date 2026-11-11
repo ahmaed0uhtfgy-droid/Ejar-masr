@@ -7,7 +7,7 @@ import { ar } from '../i18n/ar'
 import { rt } from '../i18n/rent'
 import { ApiError, apiPost } from '../lib/api'
 import { fmtNum } from '../lib/format'
-import { fmtYmd, loadRentals, todayYmd } from '../lib/rentals'
+import { fmtYmd, loadRentals, todayYmd, usePaySettings } from '../lib/rentals'
 import { usePageMeta } from '../lib/seo'
 import type { Lease, Payment } from '../lib/types'
 import { Badge, Empty, ErrorBox, Spinner } from '../components/ui'
@@ -22,6 +22,7 @@ export default function Rentals() {
   const [data, setData] = useState<{ leases: Lease[]; payments: Record<string, Payment[]> } | null>(null)
   const [err, setErr] = useState<unknown>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const ps = usePaySettings()
 
   const load = useCallback(async () => {
     if (!user) return
@@ -43,6 +44,7 @@ export default function Rentals() {
       setBusyId(null)
     }
   }
+  const dep = (l: Lease, action: string) => run(() => apiPost('/api/deposit-action', { leaseId: l.id, action }))
   const act = (l: Lease, action: string, ok?: string) => run(() => apiPost('/api/lease-respond', { leaseId: l.id, action }), ok)
 
   const today = todayYmd()
@@ -57,6 +59,8 @@ export default function Rentals() {
             {data.leases.map((l) => {
               const pays = data.payments[l.id] ?? []
               const nextPay = l.status === 'active' ? pays.find((p) => OPEN.includes(p.status)) : undefined
+              const needsContract = l.status === 'active' && !l.contractConfirmedAt
+              const payable = nextPay && !needsContract ? nextPay.id : null
               const nothingPaid = !pays.some((p) => p.status === 'paid' || p.status === 'pending')
               const needsMoveIn = l.status === 'active' && !!l.firstPaidAt && !l.moveInConfirmedAt && l.startDate <= today
               return (
@@ -79,6 +83,16 @@ export default function Rentals() {
                     </div>
                   )}
 
+                  {needsContract && (
+                    <div className="rounded-field border border-sand p-3" role="alert">
+                      <p className="font-medium">{rt.contractTitle}</p>
+                      <p className="mt-1 text-sm text-mute">{rt.contractHint}</p>
+                      <p className="mt-1 text-xs text-mute">{l.contractOwnerAt ? rt.contractOtherDone : rt.contractWaitOther}</p>
+                      {l.contractTenantAt
+                        ? <p className="mt-2 text-sm text-nile">{rt.contractMine}</p>
+                        : <button type="button" className="btn-primary mt-3 !py-1.5" onClick={() => { if (window.confirm(rt.contractConfirm)) void act(l, 'confirm-contract', rt.contractDone) }}>{rt.contractBtn}</button>}
+                    </div>
+                  )}
                   {needsMoveIn && (
                     <div className="rounded-field border border-sand p-3" role="alert">
                       <p className="font-medium">{rt.moveInQ}</p>
@@ -92,13 +106,30 @@ export default function Rentals() {
                   )}
                   {l.status === 'active' && !l.moveInConfirmedAt && l.firstPaidAt && l.startDate > today && <p className="text-xs text-mute">{rt.escrowNote}</p>}
 
-                  {pays.length > 0 && <PaymentList payments={pays} payable={nextPay?.id ?? null} busyId={busyId} onPay={(p) => void pay(p)} />}
+                  {pays.length > 0 && <PaymentList payments={pays} payable={payable} busyId={busyId} onPay={(p) => void pay(p)} />}
+                  {needsContract && <p className="text-sm text-mute">{rt.payLocked}</p>}
 
+                  {(l.depositStatus === 'claimed' || l.depositStatus === 'disputed') && (
+                    <div className="rounded-field border border-sand p-3 text-sm" role="alert">
+                      <p className="font-medium">{rt.claimOnYou(l.claimCents / 100)}</p>
+                      <p className="text-mute">{rt.claimReasonLabel}: {l.claimReason}</p>
+                      {l.depositStatus === 'disputed' && <p className="mt-1 text-xs text-mute">{rt.depDisputeNote}</p>}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button type="button" className="btn-primary !py-1.5" onClick={() => { if (window.confirm(rt.claimAcceptConfirm)) void dep(l, 'accept') }}>{rt.claimAccept}</button>
+                        {l.depositStatus === 'claimed' && <button type="button" className="btn-ghost !py-1.5" onClick={() => void dep(l, 'reject')}>{rt.claimReject}</button>}
+                      </div>
+                    </div>
+                  )}
                   {l.depositCents > 0 && l.depositStatus !== 'none' && (
                     <p className="text-sm text-mute">
                       {rt.deposit}: {fmtNum(l.depositCents / 100)} {ar.common.currency} · {rt.depStatus[l.depositStatus]}
                       {l.depositStatus === 'settled' && ` · ${rt.depBackToYou(l.depositToTenantCents / 100)} (${l.depositTransfer === 'done' ? rt.depTransferDone : rt.depTransferPending})`}
                     </p>
+                  )}
+                  {l.status === 'active' && !!l.firstPaidAt && !l.moveInConfirmedAt && ps.cancelAfterPayment === 'request' && (
+                    l.cancelRequestedAt
+                      ? <p className="text-sm text-mute">{rt.cancelRequested}</p>
+                      : <button type="button" className="btn-ghost !py-1.5 text-danger" onClick={() => { if (window.confirm(rt.cancelConfirm)) void act(l, 'request-cancel', rt.cancelReqSent) }}>{rt.requestCancel}</button>
                   )}
                   {(l.status === 'requested' || (l.status === 'active' && nothingPaid)) && (
                     <button type="button" className="btn-ghost !py-1.5 text-danger" onClick={() => { if (window.confirm(rt.confirmCancel)) void act(l, 'cancel') }}>{l.status === 'requested' ? rt.cancelReq : rt.cancelLease}</button>

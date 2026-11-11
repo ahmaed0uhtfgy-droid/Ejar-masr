@@ -39,7 +39,11 @@ export function OwnerLeases({ data, hasPayout, reload }: { data: RentalsData; ha
   const [remind, setRemind] = useState<Record<string, number>>({})
   const today = todayYmd()
 
-  async function act(l: Lease, action: 'accept' | 'reject' | 'end' | 'set-reminder', ok: string) {
+  async function withdraw(l: Lease) {
+    try { await apiPost('/api/deposit-action', { leaseId: l.id, action: 'withdraw' }); await reload() } catch (e) { toast.err(e instanceof ApiError ? e.message : ar.errors.generic) }
+  }
+
+  async function act(l: Lease, action: 'accept' | 'reject' | 'end' | 'set-reminder' | 'confirm-contract', ok: string) {
     if (action === 'end' && !window.confirm(rt.confirmEnd)) return
     try { await apiPost('/api/lease-respond', { leaseId: l.id, action, reminderDays: remind[l.id] ?? l.reminderDays ?? ps.defaultReminderDays }); toast.ok(ok); await reload() }
     catch (e) { toast.err(e instanceof ApiError ? e.message : ar.errors.generic) }
@@ -67,6 +71,16 @@ export function OwnerLeases({ data, hasPayout, reload }: { data: RentalsData; ha
                 {rt.tenant}: {l.tenantName || '—'} · {rt.tenantPhone}: <bdi dir="ltr">{l.tenantPhone}</bdi> · {fmtYmd(l.startDate)} → {fmtYmd(l.endDate)} · {rt.total} {fmtNum(l.total)} {ar.common.currency}
               </p>
               {l.note && <p className="text-sm">“{l.note}”</p>}
+              {l.status === 'active' && !l.contractConfirmedAt && (
+                <div className="rounded-field border border-sand p-3 text-sm" role="alert">
+                  <p className="font-medium">{rt.contractTitle}</p>
+                  <p className="mt-1 text-mute">{rt.contractHint}</p>
+                  <p className="mt-1 text-xs text-mute">{l.contractTenantAt ? rt.contractOtherDone : rt.contractWaitOther}</p>
+                  {l.contractOwnerAt
+                    ? <p className="mt-2 text-nile">{rt.contractMine}</p>
+                    : <button type="button" className="btn-primary mt-3 !py-1.5" onClick={() => { if (window.confirm(rt.contractConfirm)) void act(l, 'confirm-contract', rt.contractDone) }}>{rt.contractBtn}</button>}
+                </div>
+              )}
               {l.status === 'active' && l.firstPaidAt && (
                 <p className="text-sm">{l.moveInConfirmedAt ? <span className="text-nile">{rt.moveInOk}</span> : <span className="text-mute">{rt.held}</span>}{l.moveInIssue && <span className="text-danger"> · {rt.moveInIssueFlag}</span>}</p>
               )}
@@ -80,6 +94,12 @@ export function OwnerLeases({ data, hasPayout, reload }: { data: RentalsData; ha
                 </p>
               )}
               {canClaim && <ClaimForm lease={l} onDone={() => void reload()} />}
+              {(l.depositStatus === 'claimed' || l.depositStatus === 'disputed') && (
+                <div className="space-y-2 text-sm">
+                  {l.depositStatus === 'disputed' && <p className="text-mute">{rt.depDisputeNote}</p>}
+                  <button type="button" className="btn-ghost !py-1.5" onClick={() => void withdraw(l)}>{rt.claimWithdraw}</button>
+                </div>
+              )}
               {(l.status === 'requested' || l.status === 'active') && (
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="text-sm"><span className="label">{rt.remindDays}</span>

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ar } from '../i18n/ar'
-import { isPermissionError, isQuotaError } from '../lib/errors'
+import { errDetail, isPermissionError, isQuotaError } from '../lib/errors'
 import { firebaseConfigured } from '../lib/firebase'
 
 export function Spinner({ label = ar.common.loading }: { label?: string }) {
@@ -40,6 +40,7 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
   return (
     <div className="panel p-6 text-center" role="alert">
       <p>{isPermissionError(error) ? ar.errors.permission : ar.errors.generic}</p>
+      {errDetail(error) && <p dir="ltr" className="mt-2 break-words text-xs text-mute">{errDetail(error)}</p>}
       {onRetry && <button type="button" className="btn-ghost mt-3" onClick={onRetry}>{ar.common.retry}</button>}
     </div>
   )

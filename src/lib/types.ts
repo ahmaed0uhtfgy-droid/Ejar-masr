@@ -120,7 +120,7 @@ export interface ReportDoc {
 export type LeaseStatus = 'requested' | 'active' | 'rejected' | 'cancelled' | 'ended'
 export type PaymentStatus = 'due' | 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded'
 export type PayoutStatus = 'none' | 'held' | 'pending' | 'paid' | 'cancelled'
-export type DepositStatus = 'none' | 'unpaid' | 'held' | 'claimed' | 'settled'
+export type DepositStatus = 'none' | 'unpaid' | 'held' | 'claimed' | 'disputed' | 'settled'
 
 export interface Lease {
   id: string; unitId: string; unitTitle: string
@@ -130,11 +130,13 @@ export interface Lease {
   total: number; installments: number; status: LeaseStatus; createdAt: Date | null
   reminderDays: number | null; firstPaidAt: Date | null; moveInConfirmedAt: Date | null; moveInIssue: boolean; endedAt: Date | null
   depositMode: DepositMode; depositCents: number; depositStatus: DepositStatus; depositClaimUntil: string; claimCents: number; claimReason: string
+  feePayer: 'owner' | 'tenant' | 'split'; cancelRequestedAt: Date | null; policyVersion: string
+  contractOwnerAt: Date | null; contractTenantAt: Date | null; contractConfirmedAt: Date | null
   depositToOwnerCents: number; depositToTenantCents: number; depositTransfer: 'pending' | 'done' | ''; depositRef: string
 }
 
 export interface Payment {
   id: string; leaseId: string; index: number; unitId: string; ownerId: string; tenantId: string
-  amount: number; depositCents: number; feeCents: number; netCents: number; from: string; to: string; dueDate: string
+  amount: number; depositCents: number; tenantFeeCents: number; refundCents: number; feeCents: number; netCents: number; from: string; to: string; dueDate: string
   status: PaymentStatus; payoutStatus: PayoutStatus; paidAt: Date | null; payoutAt: Date | null; payoutRef: string
 }

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { buildTerms, validCycles } from '../../functions/_lib/rent'
+import { Link, useNavigate } from 'react-router-dom'
+import { buildTerms, feeCents, toCents, validCycles } from '../../functions/_lib/rent'
 import { useToast } from '../contexts/ToastContext'
 import { rt } from '../i18n/rent'
 import { ar } from '../i18n/ar'
 import { ApiError, apiPost } from '../lib/api'
 import { PHONE_RE, fmtNum } from '../lib/format'
-import { fmtYmd, todayYmd, usePaySettings } from '../lib/rentals'
+import { fmtYmd, todayYmd, usePaySettings, usePolicy } from '../lib/rentals'
 import type { Unit } from '../lib/types'
 import { Field } from './ui'
 
@@ -15,6 +15,9 @@ const MONTHS = [1, 2, 3, 4, 5, 6, 9, 12, 18, 24]
 export function RentRequestDialog({ unit, onClose }: { unit: Unit; onClose: () => void }) {
   const toast = useToast()
   const nav = useNavigate()
+  const ps = usePaySettings()
+  const policy = usePolicy()
+  const needAgree = policy?.visible !== false
   const monthly = unit.rentType === 'monthly'
   const deposit = monthly && unit.depositMode !== 'none' && unit.deposit ? unit.deposit : 0
   const [phone, setPhone] = useState('')
@@ -23,21 +26,29 @@ export function RentRequestDialog({ unit, onClose }: { unit: Unit; onClose: () =
   const [cycle, setCycle] = useState(1)
   const [days, setDays] = useState(3)
   const [note, setNote] = useState('')
+  const [agree, setAgree] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const ps = usePaySettings()
   const cycles = validCycles(months, ps.cycles)
   const cyc = cycles.includes(cycle) ? cycle : cycles[0] ?? 1
   const terms = useMemo(() => buildTerms({ rentType: unit.rentType, price: unit.price, startDate: start, durationMonths: months, cycleMonths: cyc, days }, todayYmd(), { maxMonths: ps.maxLeaseMonths, cycles: ps.cycles }), [unit, start, months, cyc, days, ps])
+
+  // The part of the platform fee the tenant pays (admin setting), per installment.
+  const tenantFee = (amount: number): number => {
+    const f = feeCents(toCents(amount), ps.platformFeePercent)
+    return (ps.feePayer === 'tenant' ? f : ps.feePayer === 'split' ? Math.round(f / 2) : 0) / 100
+  }
+  const fees = terms.ok ? terms.schedule.reduce((s, x) => s + tenantFee(x.amount), 0) : 0
 
   async function submit() {
     setError('')
     if (!PHONE_RE.test(phone.trim())) { setError(rt.errPhone); return }
     if (!terms.ok) { setError(terms.message); return }
+    if (needAgree && !agree) { setError('لازم توافق على سياسة الإيجار والدفع'); return }
     setBusy(true)
     try {
-      await apiPost('/api/lease-request', { unitId: unit.id, startDate: start, durationMonths: months, cycleMonths: cyc, days, phone: phone.trim(), note })
+      await apiPost('/api/lease-request', { acceptedPolicy: needAgree ? policy?.version : undefined, unitId: unit.id, startDate: start, durationMonths: months, cycleMonths: cyc, days, phone: phone.trim(), note })
       toast.ok(rt.sent)
       nav('/rentals')
     } catch (e) { setError(e instanceof ApiError ? e.message : ar.errors.generic) }
@@ -72,13 +83,22 @@ export function RentRequestDialog({ unit, onClose }: { unit: Unit; onClose: () =
           <div className="rounded-field border border-line p-3 text-sm">
             <p className="font-medium">{rt.schedule}</p>
             <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-              {terms.schedule.map((s) => <li key={s.index} className="flex justify-between gap-2"><span className="text-mute">{rt.due} {fmtYmd(s.dueDate)}</span><span>{fmtNum(s.amount)} {ar.common.currency}</span></li>)}
+              {terms.schedule.map((s) => (
+                <li key={s.index} className="flex justify-between gap-2">
+                  <span className="text-mute">{rt.due} {fmtYmd(s.dueDate)}</span>
+                  <span>{fmtNum(s.amount)} {ar.common.currency}{tenantFee(s.amount) > 0 ? ` + ${fmtNum(tenantFee(s.amount))} ${rt.serviceFee}` : ''}</span>
+                </li>
+              ))}
             </ul>
             {deposit > 0 && <p className="mt-2 flex justify-between text-mute"><span>{rt.depositIncluded}</span><span>+ {fmtNum(deposit)} {ar.common.currency}</span></p>}
-            <p className="mt-2 flex justify-between border-t border-line pt-2 font-semibold"><span>{rt.total}</span><span>{fmtNum(terms.total + deposit)} {ar.common.currency}</span></p>
+            <p className="mt-2 flex justify-between border-t border-line pt-2 font-semibold"><span>{rt.total}</span><span>{fmtNum(terms.total + deposit + fees)} {ar.common.currency}</span></p>
             {deposit > 0 && <p className="mt-1 text-xs text-mute">{rt.depositModes[unit.depositMode]}</p>}
           </div>
         )}
+        {needAgree && (
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span>قرأت ووافقت على <Link className="text-nile underline" to="/payments-policy" target="_blank">سياسة الإيجار والدفع</Link> (حجز الفلوس والتأمين والإلغاء والاسترداد).</span></label>
+        )}
+        <p className="text-xs text-mute">{rt.requestNote}</p>
         <p className="text-xs text-mute">{rt.escrowNote}</p>
         <p className="text-xs text-mute">{rt.feeNote}</p>
         {(error || !terms.ok) && <p className="text-sm text-danger" role="alert">{error || (terms.ok ? '' : terms.message)}</p>}

@@ -10,6 +10,12 @@ export function isQuotaError(e: unknown): boolean {
   return e instanceof Error && /quota/i.test(e.message)
 }
 
+/** Short technical reason (error code + message) shown under generic errors so a screenshot is enough to diagnose. */
+export function errDetail(e: unknown): string {
+  const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  return `${errCode(e)} ${msg}`.trim().replace(/\s+/g, ' ').slice(0, 220)
+}
+
 export function isPermissionError(e: unknown): boolean {
   return errCode(e).includes('permission-denied')
 }

@@ -5,11 +5,13 @@ import { rt } from '../i18n/rent'
 import { useAuth } from '../contexts/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 import { ConfigNotice } from './ui'
+import { usePolicy } from '../lib/rentals'
 import { Logo } from './Logo'
 
 const linkCls = ({ isActive }: { isActive: boolean }) => `rounded-field px-3 py-2 hover:bg-line/60 ${isActive ? 'font-semibold text-nile' : ''}`
 
 export function Layout() {
+  const policy = usePolicy()
   const { user, profile, isAdmin, banned, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
@@ -69,6 +71,7 @@ export function Layout() {
           <nav className="flex flex-wrap gap-x-5 gap-y-2" aria-label="روابط الموقع">
             <Link to="/about">{ar.footer.about}</Link>
             <Link to="/terms">{ar.footer.terms}</Link>
+            {policy?.visible !== false && <Link to="/payments-policy">سياسة الإيجار والدفع</Link>}
             <Link to="/privacy">{ar.footer.privacy}</Link>
             <Link to="/safety">{ar.footer.safety}</Link>
             <Link to="/contact">{ar.footer.contact}</Link>

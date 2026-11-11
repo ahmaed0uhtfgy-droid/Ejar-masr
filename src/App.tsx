@@ -16,6 +16,7 @@ const UnitForm = lazy(() => import('./pages/UnitForm'))
 const Compare = lazy(() => import('./pages/Compare'))
 const Landing = lazy(() => import('./pages/Landing'))
 const Admin = lazy(() => import('./pages/Admin'))
+const PaymentsPolicy = lazy(() => import('./pages/PaymentsPolicy'))
 const Rentals = lazy(() => import('./pages/Rentals'))
 const PayResult = lazy(() => import('./pages/PayResult'))
 const AdminPayments = lazy(() => import('./pages/AdminPayments'))
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
             <Route path="dashboard/new" element={<RequireAuth><UnitForm /></RequireAuth>} />
             <Route path="dashboard/units/:id/edit" element={<RequireAuth><UnitForm /></RequireAuth>} />
+            <Route path="payments-policy" element={<PaymentsPolicy />} />
             <Route path="rentals" element={<RequireAuth><Rentals /></RequireAuth>} />
             <Route path="pay/result" element={<RequireAuth><PayResult /></RequireAuth>} />
             <Route path="admin" element={<RequireAuth admin><Admin /></RequireAuth>} />

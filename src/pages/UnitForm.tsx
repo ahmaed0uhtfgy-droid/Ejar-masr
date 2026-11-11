@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Timestamp, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ar } from '../i18n/ar'
+import { errDetail } from '../lib/errors'
 import { rt } from '../i18n/rent'
 import { useAuth } from '../contexts/AuthContext'
 import { useSettings } from '../contexts/SettingsContext'
@@ -133,8 +134,9 @@ export default function UnitForm() {
       await batch.commit()
       toast.ok(ar.form.updated)
       nav(`/unit/${id}`)
-    } catch {
-      toast.err(ar.errors.generic)
+    } catch (e) {
+      console.error('publish failed', e)
+      toast.err(`${ar.errors.generic} (${errDetail(e)})`)
     } finally { setBusy(false) }
   }
 

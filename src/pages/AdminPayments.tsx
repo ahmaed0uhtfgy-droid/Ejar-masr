@@ -7,12 +7,13 @@ import { rt } from '../i18n/rent'
 import { ApiError, apiPost } from '../lib/api'
 import { db } from '../lib/firebase'
 import { fmtDate, fmtNum } from '../lib/format'
-import { PAY_PUBLIC_DEFAULTS, fmtYmd, loadPaySettings, mapLease, mapPayment, resetPaySettings, todayYmd, type PayPublicSettings } from '../lib/rentals'
+import { PAY_PUBLIC_DEFAULTS, fmtYmd, loadPaySettings, loadPolicy, mapLease, mapPayment, resetPaySettings, resetPolicy, todayYmd, type PayPublicSettings } from '../lib/rentals'
+import { DEFAULT_SECTIONS, POLICY_TOKENS, type Section } from '../i18n/policy'
 import { usePageMeta } from '../lib/seo'
 import type { Lease, Payment } from '../lib/types'
 import { Badge, Empty, ErrorBox, Field, Spinner } from '../components/ui'
 
-type Tab = 'settings' | 'payouts' | 'held' | 'deposits' | 'leases' | 'sweep'
+type Tab = 'settings' | 'policy' | 'payouts' | 'held' | 'deposits' | 'leases' | 'sweep'
 interface Dest { method: string; holder: string; account: string }
 interface FullSettings extends PayPublicSettings { moveInReminderDays: number; maxOpenRequests: number }
 const cur = ar.common.currency
@@ -20,7 +21,7 @@ const cur = ar.common.currency
 export default function AdminPayments() {
   usePageMeta({ title: rt.adminPayments, noindex: true })
   const [tab, setTab] = useState<Tab>('settings')
-  const tabs: [Tab, string][] = [['settings', rt.tabSettings], ['payouts', rt.tabPayouts], ['held', rt.tabHeld], ['deposits', rt.tabDeposits], ['leases', rt.tabLeases], ['sweep', rt.tabSweep]]
+  const tabs: [Tab, string][] = [['settings', rt.tabSettings], ['policy', rt.tabPolicy], ['payouts', rt.tabPayouts], ['held', rt.tabHeld], ['deposits', rt.tabDeposits], ['leases', rt.tabLeases], ['sweep', rt.tabSweep]]
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="font-display text-3xl">{rt.adminPayments}</h1>
@@ -29,6 +30,7 @@ export default function AdminPayments() {
       </div>
       <div className="mt-6">
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'policy' && <PolicyTab />}
         {tab === 'payouts' && <PaymentsByPayout status="pending" />}
         {tab === 'held' && <PaymentsByPayout status="held" />}
         {tab === 'deposits' && <DepositsTab />}
@@ -64,6 +66,13 @@ function SettingsTab() {
       {nf('defaultReminderDays', rt.sReminder, 1, 30)}
       {nf('maxOpenRequests', rt.sMaxOpen, 1, 20)}
       {nf('moveInReminderDays', rt.sMoveIn, 1, 60)}
+      <Field label={rt.sFeePayer}><select className="field" value={s.feePayer} onChange={(e) => setS({ ...s, feePayer: e.target.value as FullSettings['feePayer'] })}>{(Object.keys(rt.feePayers) as (keyof typeof rt.feePayers)[]).map((k) => <option key={k} value={k}>{rt.feePayers[k]}</option>)}</select></Field>
+      {nf('firstPayoutCapEgp', rt.sFirstCap, 0, 10000000, 1000)}
+      <Field label={rt.sCancelMode}><select className="field" value={s.cancelAfterPayment} onChange={(e) => setS({ ...s, cancelAfterPayment: e.target.value as FullSettings['cancelAfterPayment'] })}>{(Object.keys(rt.cancelModes) as (keyof typeof rt.cancelModes)[]).map((k) => <option key={k} value={k}>{rt.cancelModes[k]}</option>)}</select></Field>
+      {nf('cancelFeePercent', rt.sCancelFee, 0, 100, 0.5)}
+      {nf('payoutDays', rt.sPayoutDays, 0, 60)}
+      {nf('refundDays', rt.sRefundDays, 1, 90)}
+      {nf('disputeDays', rt.sDisputeDays, 1, 60)}
       <fieldset className="md:col-span-2"><legend className="label">{rt.sCycles}</legend>
         <div className="flex flex-wrap gap-4">
           {[1, 3, 6, 12].map((c) => (
@@ -77,60 +86,86 @@ function SettingsTab() {
   )
 }
 
-/** status "pending": released to owners and waiting for the admin transfer. status "held": escrow, tenant has not confirmed yet. */
+/** status "pending": released to owners and waiting for the admin transfer. status "held": escrow, only the tenant's confirmation releases it. */
 function PaymentsByPayout({ status }: { status: 'pending' | 'held' }) {
   const toast = useToast()
   const [rows, setRows] = useState<Payment[] | null>(null)
   const [leases, setLeases] = useState<Record<string, Lease>>({})
   const [dest, setDest] = useState<Record<string, Dest | null>>({})
+  const [paidOwners, setPaidOwners] = useState<Set<string>>(new Set())
+  const [cap, setCap] = useState(0)
+  const [cancelFee, setCancelFee] = useState(0)
   const [refs, setRefs] = useState<Record<string, string>>({})
+  const [amts, setAmts] = useState<Record<string, string>>({})
   const [err, setErr] = useState<unknown>(null)
 
   const load = useCallback(async () => {
     setErr(null)
     try {
-      const s = await getDocs(query(collection(db, 'payments'), where('payoutStatus', '==', status), limit(300)))
+      const [s, ls, ps] = await Promise.all([
+        getDocs(query(collection(db, 'payments'), where('payoutStatus', '==', status), limit(300))),
+        getDocs(query(collection(db, 'leases'), limit(500))),
+        loadPaySettings(),
+      ])
       const list = s.docs.map((d) => mapPayment(d.id, d.data())).sort((a, b) => (a.paidAt?.getTime() ?? 0) - (b.paidAt?.getTime() ?? 0))
       setRows(list)
-      const ls = await getDocs(query(collection(db, 'leases'), limit(500)))
+      setCap(ps.firstPayoutCapEgp); setCancelFee(ps.cancelFeePercent)
       setLeases(Object.fromEntries(ls.docs.map((d) => [d.id, mapLease(d.id, d.data())])))
       if (status === 'pending') {
         const owners = [...new Set(list.map((p) => p.ownerId))]
         const entries = await Promise.all(owners.map(async (o) => [o, (await getDoc(doc(db, 'users', o, 'payout', 'main')).catch(() => null))] as const))
         setDest(Object.fromEntries(entries.map(([o, d]) => [o, d?.exists() ? (d.data() as Dest) : null])))
+        const done = await getDocs(query(collection(db, 'payments'), where('payoutStatus', '==', 'paid'), limit(500)))
+        setPaidOwners(new Set(done.docs.map((d) => String(d.data().ownerId))))
       }
     } catch (e) { setErr(e) }
   }, [status])
   useEffect(() => { void load() }, [load])
 
-  async function act(p: Payment) {
+  async function markPaid(p: Payment) {
     try {
-      if (status === 'pending') await updateDoc(doc(db, 'payments', p.id), { payoutStatus: 'paid', payoutAt: serverTimestamp(), payoutRef: (refs[p.id] ?? '').slice(0, 60) })
-      else { if (!window.confirm(rt.confirmRelease)) return; await updateDoc(doc(db, 'payments', p.id), { payoutStatus: 'pending' }) }
+      await updateDoc(doc(db, 'payments', p.id), { payoutStatus: 'paid', payoutAt: serverTimestamp(), payoutRef: (refs[p.id] ?? '').slice(0, 60) })
       setRows((r) => r?.filter((x) => x.id !== p.id) ?? null)
     } catch { toast.err(ar.errors.generic) }
+  }
+  async function recordRefund(p: Payment, suggested: number) {
+    if (!window.confirm(rt.confirmRefund)) return
+    try {
+      await apiPost('/api/refund-record', { paymentId: p.id, amount: Number(amts[p.id] ?? suggested), note: refs[p.id] ?? '' })
+      setRows((r) => r?.filter((x) => x.id !== p.id) ?? null)
+    } catch (e) { toast.err(e instanceof ApiError ? e.message : ar.errors.generic) }
   }
   if (err) return <ErrorBox error={err} onRetry={() => void load()} />
   if (rows === null) return <Spinner />
   if (!rows.length) return <Empty title={status === 'held' ? rt.heldEmpty : rt.adminEmpty} />
   return (
-    <ul className="space-y-3">
-      {rows.map((p) => {
-        const d = dest[p.ownerId], l = leases[p.leaseId]
-        return (
-          <li key={p.id} className="panel flex flex-col gap-3 p-4 md:flex-row md:items-center">
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="font-medium">{l?.unitTitle} · {rt.net}: {fmtNum(p.netCents / 100)} {cur} <span className="text-mute">({rt.fee}: {fmtNum(p.feeCents / 100)})</span></p>
-              <p className="text-mute">{fmtDate(p.paidAt)} · {rt.owner}: {l?.ownerName} · {rt.tenant}: {l?.tenantName}</p>
-              {status === 'held' && l?.moveInIssue && <p className="text-danger">{rt.issue}</p>}
-              {status === 'pending' && (d ? <p>{rt.methods[d.method as keyof typeof rt.methods] ?? d.method} · {d.holder} · <bdi dir="ltr">{d.account}</bdi></p> : <p className="text-danger">{rt.noPayout}</p>)}
-            </div>
-            {status === 'pending' && <input className="field md:w-44" placeholder={rt.ref} value={refs[p.id] ?? ''} onChange={(e) => setRefs((r) => ({ ...r, [p.id]: e.target.value }))} />}
-            <button type="button" className="btn-primary" onClick={() => void act(p)}>{status === 'pending' ? rt.markPaid : rt.forceRelease}</button>
-          </li>
-        )
-      })}
-    </ul>
+    <>
+      {status === 'held' && <p className="mb-3 text-sm text-mute">{rt.refundHint}</p>}
+      <ul className="space-y-3">
+        {rows.map((p) => {
+          const d = dest[p.ownerId], l = leases[p.leaseId]
+          const overCap = status === 'pending' && cap > 0 && !paidOwners.has(p.ownerId) && p.netCents / 100 > cap
+          const suggested = l?.cancelRequestedAt ? Math.round((p.amount * 100) * (1 - cancelFee / 100)) / 100 : p.amount
+          return (
+            <li key={p.id} className="panel flex flex-col gap-3 p-4 md:flex-row md:items-center">
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium">{l?.unitTitle} · {rt.net}: {fmtNum(p.netCents / 100)} {cur} <span className="text-mute">({rt.fee}: {fmtNum(p.feeCents / 100)})</span></p>
+                <p className="text-mute">{fmtDate(p.paidAt)} · {rt.owner}: {l?.ownerName} · {rt.tenant}: {l?.tenantName}</p>
+                {status === 'held' && l?.moveInIssue && <p className="text-danger">{rt.issue}</p>}
+                {status === 'held' && l?.cancelRequestedAt && <p className="text-sand">{rt.cancelRequested} · {rt.refundSuggest}: {fmtNum(suggested)} {cur}</p>}
+                {overCap && <p className="text-danger">{rt.capWarn}</p>}
+                {status === 'pending' && (d ? <p>{rt.methods[d.method as keyof typeof rt.methods] ?? d.method} · {d.holder} · <bdi dir="ltr">{d.account}</bdi></p> : <p className="text-danger">{rt.noPayout}</p>)}
+              </div>
+              {status === 'held' && <input className="field md:w-32" type="number" min={0} max={p.amount} aria-label={rt.refundAmount} placeholder={rt.refundAmount} value={amts[p.id] ?? String(suggested)} onChange={(e) => setAmts((a) => ({ ...a, [p.id]: e.target.value }))} />}
+              <input className="field md:w-44" placeholder={status === 'pending' ? rt.ref : rt.refundNote} value={refs[p.id] ?? ''} onChange={(e) => setRefs((r) => ({ ...r, [p.id]: e.target.value }))} />
+              {status === 'pending'
+                ? <button type="button" className="btn-primary" onClick={() => void markPaid(p)}>{rt.markPaid}</button>
+                : <button type="button" className="btn-ghost" onClick={() => void recordRefund(p, suggested)}>{rt.refundRecord}</button>}
+            </li>
+          )
+        })}
+      </ul>
+    </>
   )
 }
 
@@ -150,6 +185,7 @@ function DepositsTab() {
   const { leases, err, load } = useLeases()
   const [amt, setAmt] = useState<Record<string, string>>({})
   const [refs, setRefs] = useState<Record<string, string>>({})
+  const [notes, setNotes] = useState<Record<string, string>>({})
   const [claimDays, setClaimDays] = useState(3)
   useEffect(() => { void loadPaySettings().then((s) => setClaimDays(s.depositClaimDays)) }, [])
   const today = todayYmd()
@@ -159,29 +195,35 @@ function DepositsTab() {
   if (err) return <ErrorBox error={err} onRetry={() => void load()} />
   if (!leases) return <Spinner />
   const ready = (l: Lease) => l.depositStatus === 'held' && (l.status === 'ended' || l.endDate < today) && today > (l.depositClaimUntil || addDaysYmd(l.endDate, l.depositMode === 'held-claim' ? claimDays : 0))
-  const claims = leases.filter((l) => l.depositStatus === 'claimed')
+  const waiting = leases.filter((l) => l.depositStatus === 'claimed')
+  const disputes = leases.filter((l) => l.depositStatus === 'disputed')
   const rdy = leases.filter(ready)
   const transfers = leases.filter((l) => l.depositStatus === 'settled' && l.depositTransfer === 'pending')
-  const Row = ({ l, children }: { l: Lease; children: React.ReactNode }) => (
+  const Row = ({ l, children }: { l: Lease; children?: React.ReactNode }) => (
     <li className="panel flex flex-col gap-3 p-4 md:flex-row md:items-center">
       <div className="min-w-0 flex-1 text-sm">
         <p className="font-medium">{l.unitTitle} · {rt.deposit}: {fmtNum(l.depositCents / 100)} {cur}</p>
         <p className="text-mute">{rt.owner}: {l.ownerName} · {rt.tenant}: {l.tenantName} · {fmtYmd(l.endDate)}</p>
-        {l.depositStatus === 'claimed' && <p>{rt.claimAmount}: {fmtNum(l.claimCents / 100)} — {l.claimReason}</p>}
+        {(l.depositStatus === 'claimed' || l.depositStatus === 'disputed') && <p>{rt.claimAmount}: {fmtNum(l.claimCents / 100)} — {l.claimReason}</p>}
       </div>
       {children}
     </li>
   )
-  const settle = (l: Lease, full: boolean) => (
+  const fullRefund = (l: Lease) => <button type="button" className="btn-primary !py-1.5" onClick={() => void call(l.id, 'settle', { amount: 0 })}>{rt.depRefundAll}</button>
+  const byNote = (l: Lease) => (
     <div className="flex flex-wrap items-center gap-2">
-      {!full && <input className="field !w-28" type="number" min={0} max={l.depositCents / 100} placeholder={rt.depToOwnerLabel} title={rt.depToOwnerLabel} value={amt[l.id] ?? String(l.claimCents / 100)} onChange={(e) => setAmt((a) => ({ ...a, [l.id]: e.target.value }))} />}
-      <button type="button" className="btn-primary !py-1.5" onClick={() => void call(l.id, 'settle', { amount: full ? 0 : Number(amt[l.id] ?? l.claimCents / 100) })}>{full ? rt.depRefundAll : rt.depSettle}</button>
+      <input className="field !w-28" type="number" min={0} max={l.depositCents / 100} placeholder={rt.depToOwnerLabel} title={rt.depToOwnerLabel} value={amt[l.id] ?? '0'} onChange={(e) => setAmt((a) => ({ ...a, [l.id]: e.target.value }))} />
+      <input className="field !w-56" placeholder={rt.depSettleNote} value={notes[l.id] ?? ''} onChange={(e) => setNotes((n) => ({ ...n, [l.id]: e.target.value }))} />
+      <button type="button" className="btn-primary !py-1.5" onClick={() => void call(l.id, 'settle', { amount: Number(amt[l.id] ?? 0), note: notes[l.id] ?? '' })}>{rt.depSettle}</button>
     </div>
   )
+  const list = (items: Lease[], extra?: (l: Lease) => React.ReactNode) => items.length ? <ul className="space-y-3">{items.map((l) => <Row key={l.id} l={l}>{extra?.(l)}</Row>)}</ul> : <Empty title={rt.depEmpty} />
   return (
     <div className="space-y-6">
-      <section><h2 className="mb-2 font-display text-xl">{rt.depClaims}</h2>{claims.length ? <ul className="space-y-3">{claims.map((l) => <Row key={l.id} l={l}>{settle(l, false)}</Row>)}</ul> : <Empty title={rt.depEmpty} />}</section>
-      <section><h2 className="mb-2 font-display text-xl">{rt.depReady}</h2>{rdy.length ? <ul className="space-y-3">{rdy.map((l) => <Row key={l.id} l={l}>{settle(l, true)}</Row>)}</ul> : <Empty title={rt.depEmpty} />}</section>
+      <p className="text-sm text-mute">{rt.depDisputeNote}</p>
+      <section><h2 className="mb-2 font-display text-xl">{rt.depAdminClaims}</h2>{list(waiting)}</section>
+      <section><h2 className="mb-2 font-display text-xl">{rt.depAdminDisputes}</h2>{list(disputes, byNote)}</section>
+      <section><h2 className="mb-2 font-display text-xl">{rt.depReady}</h2>{list(rdy, fullRefund)}</section>
       <section><h2 className="mb-2 font-display text-xl">{rt.depTransfers}</h2>{transfers.length ? (
         <ul className="space-y-3">{transfers.map((l) => (
           <Row key={l.id} l={l}>
@@ -209,6 +251,7 @@ function LeasesTab() {
         <li key={l.id} className="panel flex flex-wrap items-center gap-3 p-4 text-sm">
           <div className="min-w-0 flex-1"><p className="font-medium">{l.unitTitle}</p><p className="text-mute">{rt.owner}: {l.ownerName} · {rt.tenant}: {l.tenantName} · {fmtYmd(l.startDate)} → {fmtYmd(l.endDate)}</p></div>
           {l.moveInIssue && !l.moveInConfirmedAt && <Badge tone="sand">{rt.issue}</Badge>}
+          {l.cancelRequestedAt && l.status === 'active' && <Badge tone="sand">{rt.cancelRequested}</Badge>}
           <Badge tone={l.status === 'active' ? 'nile' : 'plain'}>{rt.status[l.status]}</Badge>
           {l.status === 'active' && <button type="button" className="btn-ghost !py-1.5 text-danger" onClick={() => void end(l)}>{rt.endByAdmin}</button>}
         </li>
@@ -237,6 +280,63 @@ function SweepTab() {
       <p className="text-sm text-mute">{rt.sweepHint}</p>
       <button type="button" className="btn-primary" disabled={busy} onClick={() => void run()}>{busy ? ar.common.loading : rt.sweepNow}</button>
       {log.length > 0 && <pre dir="ltr" className="text-xs text-mute">ended / move-in / installments / emails{'\n'}{log.join('\n')}</pre>}
+    </div>
+  )
+}
+
+function PolicyTab() {
+  const toast = useToast()
+  const [loaded, setLoaded] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const [draft, setDraft] = useState(true)
+  const [secs, setSecs] = useState<{ h: string; p: string; ul: string }[]>([])
+  const toRows = (x: Section[]) => x.map((a) => ({ h: a.h, p: (a.p ?? []).join('\n'), ul: (a.ul ?? []).join('\n') }))
+  useEffect(() => {
+    resetPolicy()
+    void loadPolicy().then((p) => { setVisible(p.visible); setDraft(p.draft); setSecs(toRows(p.sections ?? DEFAULT_SECTIONS)); setLoaded(true) })
+  }, [])
+  if (!loaded) return <Spinner />
+  const upd = (i: number, k: 'h' | 'p' | 'ul', v: string) => setSecs((a) => a.map((x, j) => (j === i ? { ...x, [k]: v } : x)))
+  const move = (i: number, d: number) => setSecs((a) => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return a; [b[i], b[j]] = [b[j], b[i]]; return b })
+  async function save() {
+    const sections = secs.filter((x) => x.h.trim()).map((x) => {
+      const lines = (t: string) => t.split('\n').map((l) => l.trim()).filter(Boolean)
+      const o: Section = { h: x.h.trim() }
+      if (lines(x.p).length) o.p = lines(x.p)
+      if (lines(x.ul).length) o.ul = lines(x.ul)
+      return o
+    })
+    try {
+      await setDoc(doc(db, 'settings', 'policyPage'), { visible, draft, sections, version: todayYmd(), updatedAt: serverTimestamp() })
+      resetPolicy(); toast.ok(rt.polSaved)
+    } catch { toast.err(ar.errors.generic) }
+  }
+  return (
+    <div className="space-y-4">
+      <div className="panel space-y-2 p-4">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} /> {rt.polVisible}</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} /> {rt.polDraft}</label>
+        <p className="text-xs text-mute">{rt.polHint}</p>
+        <p className="text-xs text-mute" dir="rtl">{rt.polTokens}: {Object.entries(POLICY_TOKENS).map(([k, v]) => <span key={k} className="me-3"><bdi dir="ltr">{k}</bdi> = {v}</span>)}</p>
+      </div>
+      {secs.map((x, i) => (
+        <div key={i} className="panel space-y-2 p-4">
+          <div className="flex gap-2">
+            <input className="field" aria-label={rt.polSectionTitle} placeholder={rt.polSectionTitle} value={x.h} onChange={(e) => upd(i, 'h', e.target.value)} />
+            <button type="button" className="btn-ghost !py-1.5" onClick={() => move(i, -1)} aria-label="فوق">↑</button>
+            <button type="button" className="btn-ghost !py-1.5" onClick={() => move(i, 1)} aria-label="تحت">↓</button>
+            <button type="button" className="btn-ghost !py-1.5 text-danger" onClick={() => setSecs((a) => a.filter((_, j) => j !== i))}>{ar.common.delete}</button>
+          </div>
+          <Field label={rt.polParas}><textarea className="field" rows={2} value={x.p} onChange={(e) => upd(i, 'p', e.target.value)} /></Field>
+          <Field label={rt.polBullets}><textarea className="field" rows={4} value={x.ul} onChange={(e) => upd(i, 'ul', e.target.value)} /></Field>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-ghost" onClick={() => setSecs((a) => [...a, { h: '', p: '', ul: '' }])}>{rt.polAddSection}</button>
+        <button type="button" className="btn-ghost" onClick={() => { if (window.confirm(rt.polReset)) setSecs(toRows(DEFAULT_SECTIONS)) }}>{rt.polReset}</button>
+        <button type="button" className="btn-primary" onClick={() => void save()}>{ar.common.save}</button>
+        <a className="btn-ghost" href="/payments-policy" target="_blank" rel="noreferrer">{rt.polView}</a>
+      </div>
     </div>
   )
 }
