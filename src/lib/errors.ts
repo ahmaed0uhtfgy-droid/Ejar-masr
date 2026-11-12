@@ -13,7 +13,7 @@ export function isQuotaError(e: unknown): boolean {
 /** Short technical reason (error code + message) shown under generic errors so a screenshot is enough to diagnose. */
 export function errDetail(e: unknown): string {
   const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
-  return `${errCode(e)} ${msg}`.trim().replace(/\s+/g, ' ').slice(0, 220)
+  return `${errCode(e)} ${msg}`.trim().replace(/\s+/g, ' ').slice(0, 900)
 }
 
 export function isPermissionError(e: unknown): boolean {

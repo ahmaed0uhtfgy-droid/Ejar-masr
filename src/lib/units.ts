@@ -5,6 +5,7 @@ import {
 import { db } from './firebase'
 import { isExpired } from './format'
 import { PAGE_SIZE } from './defaults'
+import { errCode } from './errors'
 import type { SearchFilters, SortKey, Unit } from './types'
 
 const toDate = (v: unknown): Date | null => (v instanceof Timestamp ? v.toDate() : null)
@@ -66,15 +67,17 @@ const MAX_ROUNDS = 3 // caps Firestore reads per "load more" click: at most MAX_
  */
 export async function searchUnits(f: SearchFilters, sort: SortKey, cursor: QueryDocumentSnapshot | null = null, pageSize = PAGE_SIZE): Promise<Page> {
   const fetchSize = pageSize * 2
-  const base: QueryConstraint[] = [where('status', '==', 'active')]
-  if (f.governorateId) base.push(where('governorateId', '==', f.governorateId))
-  if (f.rentType) base.push(where('rentType', '==', f.rentType))
+  const eq: QueryConstraint[] = [where('status', '==', 'active')]
+  if (f.governorateId) eq.push(where('governorateId', '==', f.governorateId))
+  if (f.rentType) eq.push(where('rentType', '==', f.rentType))
+  const base: QueryConstraint[] = [...eq]
   base.push(sort === 'newest' ? orderBy('createdAt', 'desc') : orderBy('price', sort === 'priceAsc' ? 'asc' : 'desc'))
 
   const items: Unit[] = []
   let cur = cursor
   let done = false
   let reads = 0
+  try {
   for (let round = 0; round < MAX_ROUNDS && items.length < pageSize && !done; round++) {
     const snap = await getDocs(query(db_units(), ...base, ...(cur ? [startAfter(cur)] : []), limit(fetchSize)))
     reads += snap.size
@@ -85,8 +88,20 @@ export async function searchUnits(f: SearchFilters, sort: SortKey, cursor: Query
     cur = snap.docs.length ? snap.docs[snap.docs.length - 1] : cur
     if (snap.size < fetchSize) done = true
   }
+  } catch (e) {
+    if (errCode(e) !== 'failed-precondition' || cursor) throw e
+    // The composite index is missing or still building: read the active units without server-side ordering and sort here.
+    // Works for a small catalogue; create the indexes in firestore.indexes.json to get paging and cheaper reads.
+    const snap = await getDocs(query(db_units(), ...eq, limit(200)))
+    const all = snap.docs.map((d) => mapUnit(d.id, d.data())).filter((u) => matchesFilters(u, f))
+    all.sort(sortFn(sort))
+    return { items: all.slice(0, pageSize), cursor: null, done: true, reads: snap.size }
+  }
   return { items, cursor: cur, done, reads }
 }
+
+const sortFn = (sort: SortKey) => (a: Unit, b: Unit): number =>
+  sort === 'priceAsc' ? a.price - b.price : sort === 'priceDesc' ? b.price - a.price : (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
 
 const db_units = () => collection(db, 'units')
 
@@ -101,13 +116,19 @@ export async function getUnits(ids: string[]): Promise<Unit[]> {
 }
 
 export async function latestUnits(n = 8): Promise<Unit[]> {
-  const snap = await getDocs(query(db_units(), where('status', '==', 'active'), orderBy('createdAt', 'desc'), limit(n * 2)))
-  return snap.docs.map((d) => mapUnit(d.id, d.data())).filter((u) => !isExpired(u.expiresAt)).slice(0, n)
+  let docs
+  try {
+    docs = (await getDocs(query(db_units(), where('status', '==', 'active'), orderBy('createdAt', 'desc'), limit(n * 2)))).docs
+  } catch (e) {
+    if (errCode(e) !== 'failed-precondition') throw e
+    docs = (await getDocs(query(db_units(), where('status', '==', 'active'), limit(100)))).docs // index missing: sort here
+  }
+  return docs.map((d) => mapUnit(d.id, d.data())).filter((u) => !isExpired(u.expiresAt)).sort(sortFn('newest')).slice(0, n)
 }
 
 export async function ownerUnits(uid: string): Promise<Unit[]> {
-  const snap = await getDocs(query(db_units(), where('ownerId', '==', uid), orderBy('createdAt', 'desc'), limit(100)))
-  return snap.docs.map((d) => mapUnit(d.id, d.data()))
+  const snap = await getDocs(query(db_units(), where('ownerId', '==', uid), limit(200)))
+  return snap.docs.map((d) => mapUnit(d.id, d.data())).sort(sortFn('newest')) // sorted here: no composite index needed
 }
 
 export const filtersToParams = (f: SearchFilters, sort: SortKey, view: 'list' | 'map'): URLSearchParams => {

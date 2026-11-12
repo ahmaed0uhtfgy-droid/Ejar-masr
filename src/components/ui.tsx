@@ -40,7 +40,11 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
   return (
     <div className="panel p-6 text-center" role="alert">
       <p>{isPermissionError(error) ? ar.errors.permission : ar.errors.generic}</p>
-      {errDetail(error) && <p dir="ltr" className="mt-2 break-words text-xs text-mute">{errDetail(error)}</p>}
+      {errDetail(error) && (
+        <p dir="ltr" className="mt-2 break-all text-xs text-mute">
+          {errDetail(error).split(/(https?:\/\/\S+)/g).map((part, i) => (i % 2 ? <a key={i} className="text-nile underline" href={part} target="_blank" rel="noreferrer">{part}</a> : part))}
+        </p>
+      )}
       {onRetry && <button type="button" className="btn-ghost mt-3" onClick={onRetry}>{ar.common.retry}</button>}
     </div>
   )
