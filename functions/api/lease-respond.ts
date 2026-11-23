@@ -1,5 +1,5 @@
 import type { Env } from '../_lib/env'
-import { commit, getDocument, runQuery, type Write } from '../_lib/firestore'
+import { commitGuarded, getDocument, runQuery, type Write } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { closeLeaseWrites } from '../_lib/leasing'
 import { cairoDayKey, isExpiredDate, isValidDocId } from '../_lib/logic'
@@ -36,6 +36,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const today = cairoDayKey()
     const unitId = String(L.unitId)
     const title = String(L.unitTitle ?? '').slice(0, 60)
+    // Every state change is guarded: if the lease was changed by someone else after we read it, this request fails with 409 instead of overwriting.
+    const commitL = (w: Write[], extra: Record<string, string | undefined> = {}) => commitGuarded(env, w, { [`leases/${leaseId}`]: lease.updateTime, ...extra })
     const set = (status: string, extra: Record<string, unknown> = {}): Write => ({ kind: 'upsert', path: `leases/${leaseId}`, data: { status, updatedAt: now, ...extra } })
     const days = (() => { const n = Math.round(Number(reminderDays)); return Number.isFinite(n) && n >= 1 && n <= 30 ? n : S.defaultReminderDays })()
 
@@ -45,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     if (action === 'reject') {
-      await commit(env, [set('rejected'), notifyWrite(String(L.tenantId), `lease_${leaseId}_rej`, 'تم رفض طلب الإيجار', `المالك رفض طلبك على "${title}".`, unitId)])
+      await commitL([set('rejected'), notifyWrite(String(L.tenantId), `lease_${leaseId}_rej`, 'تم رفض طلب الإيجار', `المالك رفض طلبك على "${title}".`, unitId)])
       return json({ status: 'rejected' })
     }
 
@@ -53,6 +55,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!S.paymentsEnabled) throw new HttpError(503, 'disabled', 'الإيجار والدفع الإلكتروني متوقف مؤقتًا')
       const unit = await getDocument(env, `units/${unitId}`)
       if (!unit || unit.data.ownerId !== user.uid || unit.data.status !== 'active' || isExpiredDate(unit.data.expiresAt)) throw new HttpError(409, 'unit', 'الوحدة مش متاحة دلوقتي')
+      // The browser rules let an owner flip a rented unit back to "active", so "active" alone is not proof it is free: check the lease that locked it.
+      const lockId = unit.data.rentedLeaseId
+      if (typeof lockId === 'string' && lockId && lockId !== leaseId) {
+        const holder = await getDocument(env, `leases/${lockId}`)
+        if (holder && holder.data.status === 'active' && String(holder.data.endDate) >= today) throw new HttpError(409, 'unit-locked', 'الوحدة عليها عقد شغال دلوقتي')
+      }
       const terms = buildTerms({
         rentType: L.rentType === 'daily' ? 'daily' : 'monthly', price: Number(L.price), startDate: String(L.startDate),
         durationMonths: Number(L.durationMonths), days: Number(L.days), cycleMonths: Number(L.cycleMonths),
@@ -82,7 +90,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         writes.push({ kind: 'upsert', path: `leases/${o.id}`, data: { status: 'rejected', updatedAt: now } })
         writes.push(notifyWrite(String(o.data.tenantId), `lease_${o.id}_rej`, 'الوحدة اتأجرت', `الوحدة "${title}" اتأجرت لشخص تاني.`, unitId))
       }
-      await commit(env, writes)
+      await commitL(writes, { [`units/${unitId}`]: unit.updateTime })   // a second accept for the same unit that raced this one fails here
       return json({ status: 'active' })
     }
 
@@ -98,7 +106,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ? notifyWrite(other, `lease_${leaseId}_cc2`, 'اتأكد توقيع العقد', `الطرفين أكدوا توقيع العقد ومعاينة "${title}". دلوقتي المستأجر يقدر يدفع من صفحة إيجاراتي.`, unitId)
         : notifyWrite(other, `lease_${leaseId}_cc1_${isOwner ? 'o' : 't'}`, 'الطرف التاني أكد توقيع العقد', `${isOwner ? 'المالك' : 'المستأجر'} أكد إن العقد اتوقّع والوحدة اتعاينت (${title}). لو ده صح أكّد من عندك كمان عشان الدفع يتفتح.`, unitId))
       if (both) w.push(notifyWrite(String(L.tenantId), `lease_${leaseId}_cc2t`, 'الدفع اتفتح', `تقدر تدفع القسط الأول لـ "${title}" من صفحة إيجاراتي.`, unitId))
-      await commit(env, w)
+      await commitL(w)
       return json({ contractConfirmed: both })
     }
 
@@ -107,14 +115,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (S.cancelAfterPayment !== 'request') throw new HttpError(409, 'blocked', 'الإلغاء بعد الدفع مش متاح. كلّم الإدارة.')
       if (L.status !== 'active' || !L.firstPaidAt || L.moveInConfirmedAt) throw new HttpError(409, 'state', 'مينفعش تطلب إلغاء في الحالة دي')
       if (L.cancelRequestedAt) throw new HttpError(409, 'state', 'طلب الإلغاء اتبعت قبل كده')
-      await commit(env, [{ kind: 'upsert', path: `leases/${leaseId}`, data: { cancelRequestedAt: now, updatedAt: now } }, notifyWrite(String(L.ownerId), `lease_${leaseId}_cr`, 'المستأجر طلب إلغاء العقد', `المستأجر طلب إلغاء العقد على "${title}". الإدارة هتراجع الطلب.`, unitId)])
+      await commitL([{ kind: 'upsert', path: `leases/${leaseId}`, data: { cancelRequestedAt: now, updatedAt: now } }, notifyWrite(String(L.ownerId), `lease_${leaseId}_cr`, 'المستأجر طلب إلغاء العقد', `المستأجر طلب إلغاء العقد على "${title}". الإدارة هتراجع الطلب.`, unitId)])
       return json({ cancelRequested: true })
     }
 
     if (action === 'set-reminder') {
       if (!isOwner) throw new HttpError(403, 'forbidden', 'مش مسموح')
       if (L.status !== 'active') throw new HttpError(409, 'state', 'العقد مش شغال')
-      await commit(env, [{ kind: 'upsert', path: `leases/${leaseId}`, data: { reminderDays: days, updatedAt: now } }])
+      await commitL([{ kind: 'upsert', path: `leases/${leaseId}`, data: { reminderDays: days, updatedAt: now } }])
       return json({ reminderDays: days })
     }
 
@@ -125,7 +133,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!L.firstPaidAt) throw new HttpError(409, 'unpaid', 'ادفع القسط الأول الأول')
       if (String(L.startDate) > today) throw new HttpError(409, 'not-started', 'العقد لسه ما بدأش')
       if (action === 'not-received') {
-        await commit(env, [{ kind: 'upsert', path: `leases/${leaseId}`, data: { moveInIssue: true, moveInIssueAt: now, updatedAt: now } }, notifyWrite(String(L.ownerId), `lease_${leaseId}_nr`, 'المستأجر لسه ما استلمش الوحدة', `المستأجر بلّغ إنه لسه ما استلمش "${title}". الفلوس فضلت محجوزة لحد ما يتحل الموضوع.`, unitId)])
+        await commitL([{ kind: 'upsert', path: `leases/${leaseId}`, data: { moveInIssue: true, moveInIssueAt: now, updatedAt: now } }, notifyWrite(String(L.ownerId), `lease_${leaseId}_nr`, 'المستأجر لسه ما استلمش الوحدة', `المستأجر بلّغ إنه لسه ما استلمش "${title}". الفلوس فضلت محجوزة لحد ما يتحل الموضوع.`, unitId)])
         return json({ moveInIssue: true })
       }
       const pays = await runQuery(env, { collection: 'payments', where: [{ field: 'leaseId', op: 'EQUAL', value: leaseId }], limit: 100 })
@@ -134,7 +142,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         writes.push({ kind: 'upsert', path: `payments/${p.id}`, data: { payoutStatus: Number(p.data.netCents) > 0 ? 'pending' : 'none', releasedAt: now } })
       }
       writes.push(notifyWrite(String(L.ownerId), `lease_${leaseId}_mi`, 'المستأجر أكد الاستلام', `المستأجر أكد استلام "${title}". الفلوس المحجوزة اتحرّرت وهتتحول لك قريبًا.`, unitId))
-      await commit(env, writes)
+      await commitL(writes)
       return json({ moveInConfirmed: true })
     }
 
@@ -144,19 +152,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (action === 'cancel') {
       if (!isTenant) throw new HttpError(403, 'forbidden', 'مش مسموح')
       if (L.status === 'requested') {
-        await commit(env, [set('cancelled'), notifyWrite(String(L.ownerId), `lease_${leaseId}_can`, 'المستأجر لغى الطلب', `تم إلغاء طلب الإيجار على "${title}".`, unitId)])
+        await commitL([set('cancelled'), notifyWrite(String(L.ownerId), `lease_${leaseId}_can`, 'المستأجر لغى الطلب', `تم إلغاء طلب الإيجار على "${title}".`, unitId)])
         return json({ status: 'cancelled' })
       }
       if (L.status !== 'active') throw new HttpError(409, 'state', 'مينفعش تلغي العقد ده')
       if (pays.some((p) => p.data.status === 'paid' || p.data.status === 'pending')) throw new HttpError(409, 'paid', 'في دفعات اتدفعت أو قيد المعالجة. كلّم المالك أو الإدارة لإنهاء العقد.')
-      await commit(env, closeLeaseWrites(leaseId, L, 'cancelled', pays, unit, today, S, { uid: String(L.ownerId), title: 'المستأجر لغى العقد', body: `تم إلغاء العقد على "${title}" قبل أي دفع.` }))
+      await commitL(closeLeaseWrites(leaseId, L, 'cancelled', pays, unit, today, S, { uid: String(L.ownerId), title: 'المستأجر لغى العقد', body: `تم إلغاء العقد على "${title}" قبل أي دفع.` }))
       return json({ status: 'cancelled' })
     }
 
     // end
     if (!isOwner && !user.isAdmin) throw new HttpError(403, 'forbidden', 'مش مسموح')
     if (L.status !== 'active') throw new HttpError(409, 'state', 'العقد مش شغال')
-    await commit(env, closeLeaseWrites(leaseId, L, 'ended', pays, unit, today, S, { uid: String(L.tenantId), title: 'تم إنهاء العقد', body: `تم إنهاء العقد على "${title}" وإلغاء الأقساط غير المدفوعة.` }))
+    await commitL(closeLeaseWrites(leaseId, L, 'ended', pays, unit, today, S, { uid: String(L.tenantId), title: 'تم إنهاء العقد', body: `تم إنهاء العقد على "${title}" وإلغاء الأقساط غير المدفوعة.` }))
     return json({ status: 'ended' })
   } catch (e) { return errorResponse(e) }
 }

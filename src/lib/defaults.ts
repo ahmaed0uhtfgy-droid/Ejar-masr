@@ -1,4 +1,5 @@
 export { DEFAULT_SETTINGS } from './defaultSettings'
+import { DEFAULT_SITE_URL } from './brand'
 
 export const REPORT_REASONS = [
   { id: 'unavailable', label: 'الوحدة غير متاحة' },
@@ -9,4 +10,4 @@ export const REPORT_REASONS = [
 ] as const
 
 export const PAGE_SIZE = 12
-export const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://ejar-masr.pages.dev'
+export const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) ?? DEFAULT_SITE_URL

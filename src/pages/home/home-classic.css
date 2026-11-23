@@ -1,0 +1,57 @@
+/* Classic home (from "إيجار مصر - تصميم الموقع"): ivory page, navy bands, gold accents, sticky 3-step story. Plain CSS so it matches the design file 1:1. */
+.ch { --navy: #0a1830; --navy2: #10264b; --gold: #c9a24b; --gold2: #e6c877; --blue: #1f4e9a; --ivory: #f6f2e8; }
+.ch-wrap { max-width: 1180px; margin: auto; padding-inline: clamp(18px, 4vw, 40px); }
+.ch-hero { display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; gap: 30px; padding-block: clamp(36px, 7vw, 84px) 24px; }
+.ch-hero h1 { font-size: clamp(34px, 5.2vw, 66px); line-height: 1.25; color: var(--navy); }
+.ch-hero h1 em { display: block; font-style: normal; color: var(--blue); font-size: .62em; margin-top: 6px; }
+.ch-hero p { max-width: 30em; margin: 20px 0 30px; font-size: 19px; }
+.ch-cta { display: flex; gap: 14px; flex-wrap: wrap; }
+.ch-art img { width: 100%; max-height: 520px; object-fit: contain; mix-blend-mode: multiply; will-change: transform; }
+.dark .ch-hero h1, .dark .ch-hero h1 em { color: inherit; }
+.dark .ch-art img { mix-blend-mode: normal; border-radius: 10px; }
+.ch-search { position: relative; z-index: 2; margin-top: 8px; background: rgb(var(--c-surface)); border: 1px solid rgb(var(--c-line)); border-radius: var(--r-hero); padding: 18px 20px; box-shadow: 0 30px 60px -35px rgb(10 24 48 / .45); display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 14px; align-items: end; }
+.ch-search .btn-primary { height: 46px; padding-inline: 32px; }
+.ch-popular { padding-block: 18px 6px; }
+.ch-dark { background: var(--navy); color: #ede6d3; }
+.ch-dark h2 { color: var(--gold2); }
+.ch-sec { padding-block: clamp(56px, 9vw, 112px); }
+.ch h2.ch-h { font-size: clamp(28px, 4vw, 48px); margin-bottom: 16px; }
+.ch-types { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 44px; border-top: 1px solid rgb(201 162 75 / .4); }
+.ch-types a { display: block; padding: 34px 26px 14px; border-inline-start: 1px solid rgb(201 162 75 / .25); transition: background .3s; }
+.ch-types a:hover { background: rgb(201 162 75 / .08); }
+.ch-types a:nth-child(3n + 1) { border-inline-start: 0; }
+.ch-types h3 { font-size: 30px; color: var(--gold2); }
+.ch-types p { opacity: .8; margin-top: 6px; font-size: 15px; }
+.ch-split { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 6vw, 88px); align-items: center; }
+.ch-split img { border-radius: var(--r-panel); box-shadow: 0 30px 60px -25px rgb(10 24 48 / .45); width: 100%; }
+.ch-story { background: rgb(var(--c-surface)); }
+.ch-track { height: 330vh; position: relative; }
+.ch-stick { position: sticky; top: 65px; height: calc(100svh - 65px); display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 40px; overflow: hidden; }
+.ch-tabs { margin-bottom: 18px; }
+.ch-steps { position: relative; height: 260px; }
+.ch-step { position: absolute; inset: 0; opacity: 0; transform: translateY(36px); transition: .7s cubic-bezier(.2, .7, .2, 1); pointer-events: none; }
+.ch-step.on { opacity: 1; transform: none; pointer-events: auto; }
+.ch-step small { color: rgb(var(--c-nile)); font: 700 16px var(--f-display), sans-serif; letter-spacing: .04em; }
+.ch-step h3 { font-size: clamp(26px, 3.4vw, 42px); }
+.ch-frame { position: relative; height: min(66svh, 520px); border-radius: var(--r-panel); overflow: hidden; background: var(--navy); }
+.ch-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.12); transition: 1s; }
+.ch-frame img.on { opacity: 1; transform: scale(1); }
+.ch-tour { background: linear-gradient(160deg, var(--navy), var(--navy2)); color: #ede6d3; }
+.ch-tour img { max-height: 520px; margin: auto; object-fit: cover; border-radius: var(--r-panel); width: 100%; }
+.ch-tour h2 { color: var(--gold2); }
+.ch-brand-img { border-radius: 4px; box-shadow: 0 30px 60px -25px rgb(10 24 48 / .45); width: 100%; }
+.ch-seal { background: var(--navy); color: #b8b09a; text-align: center; padding: 72px 20px; }
+.ch-seal img { width: min(520px, 90%); margin: 0 auto 32px; border-radius: 6px; }
+.ch-seal h2 { color: var(--gold2); font-size: clamp(28px, 4vw, 44px); }
+.ch-seal .btn-primary { margin-top: 22px; }
+@media (max-width: 860px) {
+  .ch-hero, .ch-split, .ch-stick { grid-template-columns: 1fr; }
+  .ch-search { grid-template-columns: 1fr; }
+  .ch-types { grid-template-columns: 1fr; }
+  .ch-types a { border-inline-start: 0; border-top: 1px solid rgb(201 162 75 / .25); }
+  .ch-stick { align-content: center; gap: 18px; }
+  .ch-frame { height: 34svh; order: -1; }
+  .ch-steps { height: 230px; }
+  .ch-art { order: -1; max-width: 360px; margin-inline: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .ch-step, .ch-frame img { transition: none; } .ch-track { height: auto; } .ch-stick { position: static; height: auto; } .ch-step { position: static; opacity: 1; transform: none; margin-bottom: 18px; } .ch-steps { height: auto; } .ch-frame img { position: static; opacity: 1; transform: none; display: none; } .ch-frame img.on { display: block; } }

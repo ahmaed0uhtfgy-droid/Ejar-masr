@@ -1,9 +1,13 @@
 import type { Env } from '../_lib/env'
-import { commit, getDocument } from '../_lib/firestore'
+import { commitGuarded, getDocument, type Write } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { cairoDayKey, isExpiredDate, isValidDocId } from '../_lib/logic'
 
 const DEFAULT_LIMIT = 20
+// Accounts younger than 24 h get a smaller allowance: a real new user reveals a handful of numbers, a scraper wants hundreds, and creating
+// accounts is free. Costs real users nothing noticeable and no extra database reads (createdAt is already on the profile we loaded).
+const NEW_ACCOUNT_LIMIT = 8
+const NEW_ACCOUNT_MS = 24 * 3600_000
 let settingsCache: { at: number; limit: number } | null = null
 
 async function dailyLimit(env: Env): Promise<number> {
@@ -33,7 +37,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (isExpiredDate(unit.data.expiresAt)) throw new HttpError(410, 'expired', 'انتهت مدة الإعلان')
 
     const day = cairoDayKey()
-    const limit = await dailyLimit(env)
+    const created = user.data.createdAt instanceof Date ? user.data.createdAt.getTime() : 0
+    const isNew = created > 0 && Date.now() - created < NEW_ACCOUNT_MS
+    const limit = isNew ? Math.min(NEW_ACCOUNT_LIMIT, await dailyLimit(env)) : await dailyLimit(env)
     const logPath = `revealLogs/${user.uid}_${unitId}_${day}`
     const counterPath = `revealCounts/${user.uid}_${day}`
     const already = await getDocument(env, logPath)
@@ -46,11 +52,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!contacts) throw new HttpError(404, 'no-contact', 'بيانات التواصل غير متاحة')
 
     if (!already) {
-      await commit(env, [
+      // The counter write is guarded: a burst of parallel requests all read the same count, but only ONE of them can write it. The others get 409
+      // instead of slipping past the daily limit (without this, 100 simultaneous requests would all see "0 used" and all succeed).
+      const counterWrite: Write = counter
+        ? { kind: 'upsert', path: counterPath, data: { count: used + 1 } }
+        : { kind: 'create', path: counterPath, data: { count: 1 } } // first reveal of the day: simultaneous first requests conflict on creation
+      await commitGuarded(env, [
         { kind: 'create', path: logPath, data: { uid: user.uid, unitId, ownerId: unit.data.ownerId ?? '', day, at: new Date() } },
-        { kind: 'increment', path: counterPath, field: 'count' },
+        counterWrite,
         { kind: 'upsert', path: `unitStats/${unitId}`, data: { ownerId: unit.data.ownerId ?? '' }, increments: { reveals: 1 } },
-      ])
+      ], { [counterPath]: counter?.updateTime })
     }
     return json({ phone: String(contacts.data.phone ?? ''), whatsapp: String(contacts.data.whatsapp ?? ''), remaining: Math.max(0, limit - used - (already ? 0 : 1)) })
   } catch (e) { return errorResponse(e) }

@@ -1,0 +1,10 @@
+{
+  "name": "إيجار مصر",
+  "description": "منصة عربية لإعلانات الإيجار في كل محافظات مصر: شقق وغرف وفيلل ومحلات.",
+  "url": "https://ejar-masr1.pages.dev/",
+  "language": "ar-EG",
+  "resources": [
+    { "type": "text/plain", "name": "llms.txt", "url": "https://ejar-masr1.pages.dev/llms.txt" },
+    { "type": "application/xml", "name": "sitemap", "url": "https://ejar-masr1.pages.dev/sitemap.xml" }
+  ]
+}

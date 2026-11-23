@@ -90,6 +90,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         if (more) break
       }
     }
-    return json({ ok: true, today, more, used, ...stats })
+    // The query windows are capped (500). If one is full, some leases may never be seen: say so loudly instead of silently ignoring them.
+    const truncated = active.length >= 500
+    if (truncated) console.error('sweep: 500 active leases returned, some may be skipped. Time to move to a paid plan or page this query.')
+    return json({ ok: true, today, more, truncated, used, ...stats })
   } catch (e) { return errorResponse(e) }
 }

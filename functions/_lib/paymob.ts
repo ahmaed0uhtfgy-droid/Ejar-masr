@@ -34,7 +34,8 @@ export async function createIntention(env: Env, i: IntentionInput): Promise<{ ur
     throw new HttpError(502, 'gateway', 'بوابة الدفع مش متاحة دلوقتي، حاول بعد شوية')
   }
   const d = (await res.json()) as { client_secret?: string; id?: string; intention_order_id?: number | string }
-  if (!d.client_secret) throw new HttpError(502, 'gateway', 'بوابة الدفع رجّعت رد غير متوقع')
+  // The order id is what ties a later callback to this payment (see pay-webhook), so a response without it is unusable.
+  if (!d.client_secret || d.intention_order_id === undefined || d.intention_order_id === null || d.intention_order_id === '') throw new HttpError(502, 'gateway', 'بوابة الدفع رجّعت رد غير متوقع')
   const url = `${BASE}/unifiedcheckout/?publicKey=${encodeURIComponent(env.PAYMOB_PUBLIC_KEY ?? '')}&clientSecret=${encodeURIComponent(d.client_secret)}`
   return { url, orderId: String(d.intention_order_id ?? '') }
 }

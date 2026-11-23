@@ -31,8 +31,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       paymentId = hit[0]?.id ?? ''
     }
     const pay = paymentId ? await getDocument(env, `payments/${paymentId}`) : null
-    if (!pay) { console.error('pay-webhook: unknown payment', ref); return json({ ok: true, ignored: true }) }
+    if (!pay) {
+      console.error('pay-webhook: unknown payment', ref)
+      const tid = String(obj.id ?? '')
+      if (obj.success === true && obj.pending === false && tid) { // a signed, successful payment we cannot attach to anything: keep a trace for manual reconciliation
+        try { await commit(env, [{ kind: 'create', path: `unmatchedCallbacks/${tid}`, data: { paymentId, orderId: String(order.id ?? ''), knownOrders: [], amountCents: Number(obj.amount_cents), at: new Date() } }]) } catch { /* already recorded */ }
+      }
+      return json({ ok: true, ignored: true })
+    }
     const P = pay.data
+    // SECURITY: Paymob's HMAC covers the transaction id, amount and order.id, but NOT merchant_order_id / extras, which are what we used above to pick the
+    // payment. Without this check a tenant could replay one genuine signed callback retargeted at another installment of the same amount.
+    // order.id IS signed, so require it to be one of the Paymob orders we created for THIS payment (pay-create records every attempt).
+    const knownOrders = [P.gatewayOrderId, ...(Array.isArray(P.gatewayOrderIds) ? P.gatewayOrderIds : [])].map((x) => String(x ?? '')).filter(Boolean)
+    if (!knownOrders.includes(String(order.id ?? ''))) {
+      console.error('pay-webhook: order does not belong to this payment', paymentId, order.id)
+      // Signed by Paymob and successful, yet not tied to any order we created: either a replay attempt or (if our order-id assumption is wrong)
+      // a REAL payment. Keep a server-only record so the admin can reconcile it by hand instead of the money vanishing without a trace.
+      const seenTxn = String(obj.id ?? '') // (txnId is declared further down)
+      if (obj.success === true && obj.pending === false && seenTxn) {
+        try { await commit(env, [{ kind: 'create', path: `unmatchedCallbacks/${seenTxn}`, data: { paymentId, orderId: String(order.id ?? ''), knownOrders, amountCents: Number(obj.amount_cents), at: new Date() } }]) } catch { /* already recorded */ }
+      }
+      return json({ ok: true, ignored: true })
+    }
     const txnId = String(obj.id ?? '')
     const now = new Date()
 
@@ -48,7 +69,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         console.error('pay-webhook: amount mismatch', paymentId, obj.amount_cents, P.amountCents)
         return json({ ok: true, ignored: true })
       }
-      if (P.status === 'paid') return json({ ok: true, duplicate: true })
+      if (P.status === 'paid') {
+        // The same transaction delivered twice is normal. A DIFFERENT successful transaction for an already-paid installment means the tenant was
+        // charged twice (e.g. two checkout tabs). Record it, otherwise nobody would ever know that money needs refunding.
+        if (txnId && txnId !== String(P.gatewayTxnId ?? '')) {
+          const seen = Array.isArray(P.extraCharges) ? (P.extraCharges as unknown[]).map(String) : []
+          if (!seen.includes(txnId)) {
+            console.error('pay-webhook: DOUBLE CHARGE, refund needed', paymentId, txnId)
+            await commit(env, [{ kind: 'upsert', path: `payments/${paymentId}`, data: { extraCharges: [...seen, txnId].slice(-10), extraChargeAt: new Date() } }])
+          }
+        }
+        return json({ ok: true, duplicate: true })
+      }
       // Escrow: the money stays with the platform ("held") until the tenant confirms receiving the unit.
       const lease = await getDocument(env, `leases/${String(P.leaseId)}`)
       const released = !!lease?.data.moveInConfirmedAt

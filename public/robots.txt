@@ -4,4 +4,4 @@ Disallow: /admin
 Disallow: /dashboard
 Disallow: /account
 Disallow: /api/
-Sitemap: https://ejar-masr.pages.dev/sitemap.xml
+Sitemap: https://ejar-masr1.pages.dev/sitemap.xml

@@ -16,6 +16,7 @@ import { saveLocations, saveSettings } from '../lib/settingsStore'
 import { getUnit, mapUnit } from '../lib/units'
 import type { AppSettings, LocItem, Option, ReportDoc, ReportStatus, Unit, UserDoc } from '../lib/types'
 import { Badge, Empty, ErrorBox, Field, Spinner } from '../components/ui'
+import { DesignTab } from '../components/DesignTab'
 
 type Tab = keyof typeof ar.admin.tabs
 const TABS = Object.keys(ar.admin.tabs) as Tab[]
@@ -27,13 +28,19 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>('stats')
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="font-display text-3xl">{ar.admin.title}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-3xl">{ar.admin.title}</h1>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/admin/articles" className="btn-primary">{ar.nav.adminArticles} (المدونة والسيو)</Link>
+        </div>
+      </div>
       <div role="tablist" className="mt-5 flex flex-wrap gap-2">
         {TABS.map((k) => <button key={k} role="tab" aria-selected={tab === k} type="button" onClick={() => setTab(k)} className={`btn ${tab === k ? 'bg-nile-dark text-white dark:text-paper' : 'border border-line bg-surface'}`}>{ar.admin.tabs[k]}</button>)}
       </div>
       <div className="mt-6">
         {tab === 'stats' && <StatsTab />}
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'design' && <DesignTab />}
         {tab === 'units' && <UnitsTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'reports' && <ReportsTab />}

@@ -1,4 +1,4 @@
-# إيجار مصر — ejar-masr.pages.dev
+# إيجار مصر — ejar-masr1.pages.dev
 
 منصة عربية (RTL) لعرض وحدات الإيجار في مصر. الستاك مجاني بالكامل: Vite + React + TS + Tailwind، Cloudflare Pages + Pages Functions، Firebase Spark (Auth + Firestore)، Cloudinary Free، Leaflet + OSM.
 
@@ -11,7 +11,7 @@ npm run dev
 فحوصات: `npm run typecheck && npm run lint && npm test && npm run build`
 
 ## الإعداد (مرة واحدة)
-1. **Firebase (Spark)**: فعّل Authentication (Email/Password + Google) وأنشئ Firestore. أضف `ejar-masr.pages.dev` في Authentication > Settings > Authorized domains.
+1. **Firebase (Spark)**: فعّل Authentication (Email/Password + Google) وأنشئ Firestore. أضف `ejar-masr1.pages.dev` في Authentication > Settings > Authorized domains.
 2. **نشر القواعد والفهارس**: `firebase deploy --only firestore:rules,firestore:indexes` (الملفين `firestore.rules` و`firestore.indexes.json`). الفهارس بتتولّد بـ `npm run gen:data`.
 3. **أول أدمن**: سجّل حساب من الموقع، وبعدها من Firebase console > Firestore > `users/{uid}` غيّر `role` إلى `admin`.
 4. **Cloudinary (Free)**: خد `cloud name` و`API key` و`API secret`. مفيش unsigned preset — الرفع بتوقيع من `/api/sign-upload`.
@@ -48,7 +48,7 @@ npm run dev
 
 ## حل المشاكل الشائعة
 - **403 permission-denied على `units`**: القواعد مش منشورة. نفّذ `firebase use ejar-masr-5301c && firebase deploy --only firestore:rules,firestore:indexes`.
-- **"انتهت الجلسة" أو 401 عند رفع الصور**: افتح `https://ejar-masr.pages.dev/api/health`. كل القيم لازم `true` و`serviceAccount: "ok"` و`projectMatches: true`. لو لأ، صلّح المتغيرات في Cloudflare (Production) وأعد النشر (Redeploy).
+- **"انتهت الجلسة" أو 401 عند رفع الصور**: افتح `https://ejar-masr1.pages.dev/api/health`. كل القيم لازم `true` و`serviceAccount: "ok"` و`projectMatches: true`. لو لأ، صلّح المتغيرات في Cloudflare (Production) وأعد النشر (Redeploy).
 - **400 على signInWithPassword**: بريد/كلمة سر غلط، أو Email/Password مش مفعّل في Firebase Authentication.
 - تحذير `Cross-Origin-Opener-Policy` مع تسجيل الدخول بجوجل: عادي ومبيأثرش.
 
@@ -87,3 +87,11 @@ npm run dev
 **قرارات المنتج المطبّقة:** الفلوس مبتتحولش للمالك إلا بتأكيد المستأجر (حتى الأدمن مش قادر يحررها، والقواعد بتمنع ده؛ بيقدر يسجّل رد للمستأجر بس). العمولة على كل دفعة، والأدمن يحدد مين بيتحملها (المالك/المستأجر/مناصفة) والنسبة. الرد كامل لو المستأجر ماستلمش. الإلغاء بعد الدفع وقبل الاستلام: الأدمن يختار ممنوع أو "طلب إلغاء" برسوم يحددها. أول تحويل لمالك جديد فوق حد معين بيظهر عليه تنبيه مراجعة هوية. أيام التحويل والرد والنزاع قابلة للتعديل. التحويل للمالك لسه يدوي لحد ما تتفعّل بوابة بتدعم التوزيع التلقائي.
 
 **قرارات إضافية مطبّقة:** (١) مفيش دفع قبل ما المالك والمستأجر الاتنين يأكدوا من "إيجاراتي" إن العقد اتوقّع فعليًا والوحدة اتعاينت (السيرفر بيرفض الدفع قبل كده). (٢) نزاع التأمين بين الطرفين: المالك يقدّم مطالبة ← المستأجر يوافق (تتحول) أو يرفض (الفلوس تتجمّد) ← المالك يقدر يسحبها فيرجع التأمين كامل للمستأجر. الأدمن بينفّذ بس: رد كامل بعد انتهاء المهلة من غير مطالبة، أو تسوية نزاع بأساس مكتوب (اتفاق أو حكم قضائي).
+
+## الدومين الجديد وSEO (ejar-masr1.pages.dev)
+
+1. **Cloudflare Pages**: أضف متغير `SITE_URL` = `https://ejar-masr1.pages.dev` (Production + Preview) وأعد النشر.
+2. **Firebase**: Authentication > Settings > Authorized domains أضف `ejar-masr1.pages.dev` (وإلا تسجيل الدخول بجوجل مش هيشتغل).
+3. **GitHub secrets**: حدّث `SITE_URL` لنفس القيمة (للـ job اليومي `sweep.yml`).
+4. **Google Search Console**: الملف `public/googlefa501145a8f3449f.html` موجود لإثبات الملكية. بعد النشر افتح `https://ejar-masr1.pages.dev/googlefa501145a8f3449f.html` وتأكد إنه بيظهر، ثم اضغط Verify، وبعدها أرسل `https://ejar-masr1.pages.dev/sitemap.xml` واطلب فهرسة `/` بـ URL Inspection.
+5. **تغيير الاسم لاحقًا**: عدّل `src/lib/brand.ts` فقط (`BRAND` و`BRAND_EN` و`DEFAULT_SITE_URL`)، وكمان `<title>` و`<meta description>` في `index.html`.

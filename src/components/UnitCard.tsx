@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { fmtPrice } from '../lib/format'
 import { images } from '../lib/images'
-import { addToCompare, useCompareIds } from '../lib/compare'
+import { toggleCompare, useCompareIds } from '../lib/compare'
 import type { Unit } from '../lib/types'
 import { Badge } from './ui'
 
@@ -18,7 +18,7 @@ export function UnitCard({ unit }: { unit: Unit }) {
     <article className="panel overflow-hidden">
       <Link to={`/unit/${unit.id}`} className="block">
         <div className="aspect-[4/3] bg-line/50">
-          {cover && <img src={images.url(cover, { w: 480, h: 360 })} alt={unit.title} loading="lazy" width={480} height={360} className="h-full w-full object-cover" />}
+          {cover && <img src={images.url(cover, { w: 320, h: 240 })} srcSet={`${images.url(cover, { w: 320, h: 240 })} 320w, ${images.url(cover, { w: 480, h: 360 })} 480w, ${images.url(cover, { w: 640, h: 480 })} 640w`} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" alt={unit.title} loading="lazy" width={480} height={360} className="h-full w-full object-cover" />}
         </div>
       </Link>
       <div className="space-y-2 p-4">
@@ -36,8 +36,11 @@ export function UnitCard({ unit }: { unit: Unit }) {
             type="button" className="btn-ghost !px-3 !py-1.5 text-sm" aria-pressed={fav}
             onClick={() => { if (!user) { toast.err(ar.auth.loginRequired); return } toggleFavorite(unit.id).catch(() => toast.err(ar.errors.generic)) }}
           >{fav ? '♥' : '♡'} <span className="sr-only">{fav ? ar.unit.unfavorite : ar.unit.favorite}</span></button>
-          <button type="button" className="btn-ghost !px-3 !py-1.5 text-sm" onClick={() => { const r = addToCompare(unit.id); toast[r === 'full' ? 'err' : 'ok'](r === 'full' ? ar.compare.max : ar.unit.inCompare) }}>
-            {compare.includes(unit.id) ? ar.unit.inCompare : ar.unit.compare}
+          <button
+            type="button" className="btn-ghost !px-3 !py-1.5 text-sm" aria-pressed={compare.includes(unit.id)}
+            onClick={() => { const r = toggleCompare(unit.id); if (r === 'full') toast.err(ar.compare.max); else toast.ok(r === 'added' ? ar.unit.addedCompare : ar.unit.removedCompare) }}
+          >
+            {compare.includes(unit.id) ? `✕ ${ar.unit.removeCompare}` : ar.unit.compare}
           </button>
         </div>
       </div>

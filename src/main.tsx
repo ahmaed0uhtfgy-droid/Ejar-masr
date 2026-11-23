@@ -6,9 +6,15 @@ import { AuthProvider } from './contexts/AuthContext'
 import { SettingsProvider } from './contexts/SettingsContext'
 import { ToastProvider } from './contexts/ToastContext'
 import './index.css'
+import { syncThemeColor } from './lib/theme'
+import { ErrorBoundary, reloadOnce } from './components/ErrorBoundary'
+
+window.addEventListener('vite:preloadError', (e) => { if (reloadOnce()) e.preventDefault() }) // a stale tab after a deploy: reload once to get the new files
+syncThemeColor() // the inline script in index.html already set the dark class; make the phone's browser bar match it too
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <ErrorBoundary>
     <BrowserRouter>
       <SettingsProvider>
         <AuthProvider>
@@ -18,5 +24,6 @@ createRoot(document.getElementById('root')!).render(
         </AuthProvider>
       </SettingsProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )

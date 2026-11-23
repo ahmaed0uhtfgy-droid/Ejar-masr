@@ -45,7 +45,7 @@ export function buildTerms(t: Terms, today: string, limits: Limits = DEFAULT_LIM
   if (!parseYmd(t.startDate)) return { ok: false, message: 'تاريخ البداية غير صحيح' }
   if (t.startDate < today) return { ok: false, message: 'تاريخ البداية لازم يكون النهارده أو بعده' }
   if (t.startDate > addDaysYmd(today, MAX_START_AHEAD_DAYS)) return { ok: false, message: 'تاريخ البداية بعيد قوي' }
-  if (!(t.price > 0)) return { ok: false, message: 'سعر الوحدة غير صحيح' }
+  if (typeof t.price !== 'number' || !Number.isFinite(t.price) || t.price <= 0) return { ok: false, message: 'سعر الوحدة غير صحيح' }
 
   if (t.rentType === 'daily') {
     const n = t.days
@@ -64,7 +64,8 @@ export function buildTerms(t: Terms, today: string, limits: Limits = DEFAULT_LIM
     const from = addMonthsYmd(t.startDate, i * cycle!)
     schedule.push({ index: i, from, to: addMonthsYmd(t.startDate, (i + 1) * cycle!), dueDate: from, amount: Math.round(t.price * cycle! * 100) / 100 })
   }
-  return { ok: true, endDate: addMonthsYmd(t.startDate, months!), total: schedule.reduce((s, x) => s + x.amount, 0), schedule }
+  // Sum in whole cents: adding decimal amounts directly drifts (e.g. 14814.719999999996).
+  return { ok: true, endDate: addMonthsYmd(t.startDate, months!), total: schedule.reduce((s, x) => s + toCents(x.amount), 0) / 100, schedule }
 }
 
 /** Valid payment cycles for a contract length (e.g. 6 months -> 1, 3, 6). */

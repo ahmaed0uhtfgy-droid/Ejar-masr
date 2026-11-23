@@ -1,3 +1,5 @@
+import type { DesignId } from './designIds'
+
 export type Role = 'user' | 'admin'
 export type AccountType = 'owner' | 'broker'
 export type RentType = 'monthly' | 'daily'
@@ -20,6 +22,7 @@ export interface UserDoc {
 export interface Option { id: string; label: string; plural?: string }
 
 export interface AppSettings {
+  design: DesignId // which site design is live (Admin > المظهر)
   minImages: number
   maxImages: number
   defaultAdDays: number // 0 = no automatic expiry

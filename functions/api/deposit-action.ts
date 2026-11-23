@@ -1,5 +1,5 @@
 import type { Env } from '../_lib/env'
-import { commit, getDocument, type Write } from '../_lib/firestore'
+import { commitGuarded, getDocument, type Write } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { cairoDayKey, isValidDocId } from '../_lib/logic'
 import { addDaysYmd } from '../_lib/rent'
@@ -29,6 +29,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const dep = Number(L.depositCents ?? 0)
     const title = String(L.unitTitle ?? '').slice(0, 60)
     const unitId = String(L.unitId)
+    // A claim, a tenant's answer and an owner's withdrawal can arrive in the same second: only one may act on the state it read.
+    const commitL = (w: Write[]) => commitGuarded(env, w, { [`leases/${b.leaseId}`]: lease.updateTime })
     const upd = (data: Record<string, unknown>): Write => ({ kind: 'upsert', path: `leases/${b.leaseId}`, data: { ...data, updatedAt: now } })
     const settled = (toOwner: number): Write => upd({ depositStatus: 'settled', depositToOwnerCents: toOwner, depositToTenantCents: dep - toOwner, depositTransfer: 'pending', settledAt: now })
     const tell = (toOwner: number): Write[] => [
@@ -48,7 +50,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const reason = String(b.reason ?? '').trim()
       if (!Number.isInteger(cents) || cents < 100 || cents > dep) throw new HttpError(400, 'bad-amount', 'مبلغ المطالبة لازم يكون من ١ جنيه لحد قيمة التأمين')
       if (reason.length < 5 || reason.length > 300) throw new HttpError(400, 'bad-reason', 'اكتب سبب المطالبة (٥ حروف على الأقل)')
-      await commit(env, [upd({ depositStatus: 'claimed', claimCents: cents, claimReason: reason, claimAt: now }), notifyWrite(String(L.tenantId), `dep_${b.leaseId}_claim`, 'المالك قدّم مطالبة على التأمين', `المالك طلب ${cents / 100} جنيه من التأمين على "${title}". افتح إيجاراتي وردّ بالموافقة أو الرفض.`, unitId)])
+      await commitL([upd({ depositStatus: 'claimed', claimCents: cents, claimReason: reason, claimAt: now }), notifyWrite(String(L.tenantId), `dep_${b.leaseId}_claim`, 'المالك قدّم مطالبة على التأمين', `المالك طلب ${cents / 100} جنيه من التأمين على "${title}". افتح إيجاراتي وردّ بالموافقة أو الرفض.`, unitId)])
       return json({ depositStatus: 'claimed' })
     }
 
@@ -56,18 +58,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (L.tenantId !== user.uid) throw new HttpError(403, 'forbidden', 'مش مسموح')
       if (st !== 'claimed' && !(action === 'accept' && st === 'disputed')) throw new HttpError(409, 'state', 'مفيش مطالبة تنتظر ردك')
       if (action === 'reject') {
-        await commit(env, [upd({ depositStatus: 'disputed', disputeAt: now }), notifyWrite(String(L.ownerId), `dep_${b.leaseId}_rej`, 'المستأجر رفض المطالبة', `المستأجر رفض مطالبتك على التأمين في "${title}". الفلوس متجمّدة لحد ما تتفقوا. تقدر تسحب المطالبة أو تتفاهم معاه.`, unitId)])
+        await commitL([upd({ depositStatus: 'disputed', disputeAt: now }), notifyWrite(String(L.ownerId), `dep_${b.leaseId}_rej`, 'المستأجر رفض المطالبة', `المستأجر رفض مطالبتك على التأمين في "${title}". الفلوس متجمّدة لحد ما تتفقوا. تقدر تسحب المطالبة أو تتفاهم معاه.`, unitId)])
         return json({ depositStatus: 'disputed' })
       }
       const toOwner = Number(L.claimCents ?? 0)
-      await commit(env, [settled(toOwner), ...tell(toOwner)])
+      await commitL([settled(toOwner), ...tell(toOwner)])
       return json({ depositStatus: 'settled' })
     }
 
     if (action === 'withdraw') {
       if (L.ownerId !== user.uid) throw new HttpError(403, 'forbidden', 'مش مسموح')
       if (st !== 'claimed' && st !== 'disputed') throw new HttpError(409, 'state', 'مفيش مطالبة تسحبها')
-      await commit(env, [settled(0), ...tell(0)])
+      await commitL([settled(0), ...tell(0)])
       return json({ depositStatus: 'settled' })
     }
 
@@ -83,13 +85,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         toOwner = Math.round(Number(b.amount ?? 0) * 100)
         if (!Number.isInteger(toOwner) || toOwner < 0 || toOwner > dep) throw new HttpError(400, 'bad-amount', 'المبلغ لازم يكون من صفر لحد قيمة التأمين')
       } else throw new HttpError(409, 'state', 'مفيش تأمين للتسوية بالشكل ده')
-      await commit(env, [settled(toOwner), upd({ settleNote: note.slice(0, 300) }), ...tell(toOwner)])
+      await commitL([settled(toOwner), upd({ settleNote: note.slice(0, 300) }), ...tell(toOwner)])
       return json({ depositStatus: 'settled' })
     }
 
     if (action === 'transferred') {
       if (st !== 'settled' || L.depositTransfer !== 'pending') throw new HttpError(409, 'state', 'مفيش تحويل مستني')
-      await commit(env, [upd({ depositTransfer: 'done', transferredAt: now, depositRef: String(b.ref ?? '').slice(0, 60) }), notifyWrite(String(L.tenantId), `dep_${b.leaseId}_done`, 'تم تحويل التأمين', `تم تحويل التأمين الخاص بـ "${title}".`, unitId)])
+      await commitL([upd({ depositTransfer: 'done', transferredAt: now, depositRef: String(b.ref ?? '').slice(0, 60) }), notifyWrite(String(L.tenantId), `dep_${b.leaseId}_done`, 'تم تحويل التأمين', `تم تحويل التأمين الخاص بـ "${title}".`, unitId)])
       return json({ depositTransfer: 'done' })
     }
     throw new HttpError(400, 'bad-action', 'إجراء غير صحيح')

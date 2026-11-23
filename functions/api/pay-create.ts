@@ -1,5 +1,5 @@
 import type { Env } from '../_lib/env'
-import { commit, getDocument, runQuery } from '../_lib/firestore'
+import { commitGuarded, getDocument, runQuery } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { siteUrl } from '../_lib/env'
 import { createIntention, paymobConfigured } from '../_lib/paymob'
@@ -12,6 +12,8 @@ const PAYABLE = ['due', 'failed', 'pending']
  * Tenant only. Creates a Paymob checkout for one installment and returns { url } to redirect to.
  * The amount always comes from Firestore, never from the client. Payment is confirmed only by /api/pay-webhook.
  */
+const REUSE_MS = 10 * 60_000
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const user = await requireUser(request, env)
@@ -32,12 +34,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const cents = Number(pay.data.amountCents)
     if (!Number.isInteger(cents) || cents < 100) throw new HttpError(500, 'bad-amount', 'مبلغ الدفعة غير صحيح')
+    // A second tab / double click within a few minutes gets the SAME checkout: one Paymob order can only be paid once, so it cannot be charged twice.
+    // The URL carries the checkout secret, so it lives in a server-only collection (the security rules deny every client access to it).
+    if (String(pay.data.status) === 'pending') {
+      const prev = await getDocument(env, `checkoutSessions/${paymentId}`)
+      const at = prev?.data.at instanceof Date ? prev.data.at.getTime() : 0
+      if (prev && typeof prev.data.url === 'string' && Date.now() - at < REUSE_MS && Number(prev.data.amountCents) === cents && String(prev.data.orderId) === String(pay.data.gatewayOrderId ?? '')) return json({ url: prev.data.url, reused: true })
+    }
     const { url, orderId } = await createIntention(env, {
       amountCents: cents, title: `ايجار - ${String(lease.data.unitTitle ?? '')}`, reference: `${paymentId}-${newId(6)}`, paymentId,
       name: String(lease.data.tenantName ?? ''), email: String(user.data.email ?? ''), phone: String(lease.data.tenantPhone ?? ''),
       notificationUrl: `${siteUrl(env)}/api/pay-webhook`, redirectionUrl: `${siteUrl(env)}/pay/result?p=${paymentId}`,
     })
-    await commit(env, [{ kind: 'upsert', path: `payments/${paymentId}`, data: { status: 'pending', gatewayOrderId: orderId, lastAttemptAt: new Date() } }])
+    // Guarded: two simultaneous first clicks both reach this point with two different Paymob orders. Only one may be recorded; the other fails
+    // with 409 (and its order is never shown to the user), so a payment can never arrive on an order we did not record.
+    await commitGuarded(env, [{ kind: 'upsert', path: `checkoutSessions/${paymentId}`, data: { url, orderId, amountCents: cents, tenantId: user.uid, at: new Date() } }, { kind: 'upsert', path: `payments/${paymentId}`, data: { status: 'pending', gatewayOrderId: orderId, gatewayOrderIds: [...new Set([...(Array.isArray(pay.data.gatewayOrderIds) ? pay.data.gatewayOrderIds.map(String) : []), orderId])].slice(-10), lastAttemptAt: new Date() } }], { [`payments/${paymentId}`]: pay.updateTime })
     return json({ url })
   } catch (e) { return errorResponse(e) }
 }

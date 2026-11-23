@@ -1,5 +1,6 @@
 import type { Env } from './env'
-import { getDocument } from './firestore'
+import { overLimit } from './edgeLimit'
+import { ConflictError, getDocument } from './firestore'
 import { verifyIdToken } from './google'
 
 export class HttpError extends Error {
@@ -11,6 +12,7 @@ export const json = (data: unknown, status = 200, headers: Record<string, string
 
 export function errorResponse(e: unknown): Response {
   if (e instanceof HttpError) return json({ error: e.code, message: e.message }, e.status)
+  if (e instanceof ConflictError) return json({ error: 'conflict', message: 'حصل تغيير في نفس اللحظة. حدّث الصفحة وجرّب تاني.' }, 409)
   console.error(e)
   return json({ error: 'server', message: 'حصل خطأ في السيرفر، حاول مرة تانية' }, 500)
 }
@@ -34,6 +36,8 @@ export async function requireUser(request: Request, env: Env, opts: { admin?: bo
     if (name === 'JWTClaimValidationFailed') throw new HttpError(401, 'project-mismatch', 'مشروع Firebase في السيرفر مختلف عن مشروع الموقع. راجع FIREBASE_PROJECT_ID')
     throw new HttpError(401, 'bad-token', 'تعذر التحقق من الجلسة، سجّل دخولك تاني')
   }
+  // Free sign-up means anyone can own accounts; stop one account from draining the database quota through our API (no database cost for this check).
+  if (await overLimit(`api:${uid}`, 120, 600)) throw new HttpError(429, 'rate', 'طلبات كتير في وقت قصير، استنى شوية وجرّب تاني')
   const profile = await getDocument(env, `users/${uid}`)
   if (!profile) throw new HttpError(403, 'no-profile', 'الحساب غير مكتمل')
   if (profile.data.banned === true) throw new HttpError(403, 'banned', 'حسابك محظور')

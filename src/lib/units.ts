@@ -1,8 +1,9 @@
 import {
   collection, doc, getDoc, getDocs, limit, orderBy, query, startAfter, where,
-  Timestamp, type DocumentData, type QueryConstraint, type QueryDocumentSnapshot,
+  Timestamp, type DocumentData, type DocumentSnapshot, type QueryConstraint, type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from './firebase'
+import { edgeAvailable, fetchEdge, markEdgeDown, revive } from './edgeApi'
 import { isExpired } from './format'
 import { PAGE_SIZE } from './defaults'
 import { errCode } from './errors'
@@ -57,7 +58,37 @@ export function matchesFilters(u: Unit, f: SearchFilters, now: Date = new Date()
   return true
 }
 
-export interface Page { items: Unit[]; cursor: QueryDocumentSnapshot | null; done: boolean; reads: number }
+/** Where "load more" continues from: a Firestore snapshot (direct read) or the edge API's opaque token plus the id of the last listing. */
+export type SearchCursor = QueryDocumentSnapshot | { api: string; id: string }
+const isApiCursor = (c: SearchCursor): c is { api: string; id: string } => 'api' in c
+export interface Page { items: Unit[]; cursor: SearchCursor | null; done: boolean; reads: number }
+
+interface Round { docs: { id: string; data: DocumentData }[]; next: SearchCursor | null; full: boolean }
+
+/**
+ * One batch of raw listings. First choice: the edge-cached API (one Firestore read serves every visitor running the same search, and it is
+ * closer to the user). Any problem (timeout, error, rate limit, no Functions in local dev) silently falls back to reading Firestore directly.
+ */
+async function fetchRound(f: SearchFilters, sort: SortKey, cur: SearchCursor | null, fetchSize: number, base: QueryConstraint[]): Promise<Round> {
+  if (edgeAvailable()) {
+    try {
+      const qs = new URLSearchParams({ sort, n: String(fetchSize) })
+      if (f.governorateId) qs.set('gov', f.governorateId)
+      if (f.rentType) qs.set('rent', f.rentType)
+      if (cur) { if (!isApiCursor(cur)) throw new Error('direct cursor'); qs.set('after', cur.api) }
+      const r = await fetchEdge<{ docs: { id: string; data: Record<string, unknown> }[]; next: string | null }>(`/api/units?${qs.toString()}`)
+      const docs = r.docs.map((d) => ({ id: d.id, data: revive(d.data) as DocumentData }))
+      const last = docs[docs.length - 1]
+      // The server says whether another page exists (it knows exactly); a page that is exactly full with nothing after it must NOT be requested again.
+      return { docs, next: r.next && last ? { api: r.next, id: last.id } : null, full: !!r.next && docs.length > 0 }
+    } catch (e) { if (!(e instanceof Error && e.message === 'direct cursor')) markEdgeDown() }
+  }
+  let from: DocumentSnapshot | null = null
+  if (cur) from = isApiCursor(cur) ? await getDoc(doc(db, 'units', cur.id)) : cur
+  const snap = await getDocs(query(db_units(), ...base, ...(from ? [startAfter(from)] : []), limit(fetchSize)))
+  const last = snap.docs[snap.docs.length - 1]
+  return { docs: snap.docs.map((d) => ({ id: d.id, data: d.data() })), next: last ?? null, full: snap.size >= fetchSize }
+}
 
 const MAX_ROUNDS = 3 // caps Firestore reads per "load more" click: at most MAX_ROUNDS * FETCH_SIZE
 
@@ -65,7 +96,7 @@ const MAX_ROUNDS = 3 // caps Firestore reads per "load more" click: at most MAX_
  * Server-side: status, governorate, rentType equality + one ordering (indexes in firestore.indexes.json).
  * Everything else is filtered client-side, so selective filters can cost more reads per visible card.
  */
-export async function searchUnits(f: SearchFilters, sort: SortKey, cursor: QueryDocumentSnapshot | null = null, pageSize = PAGE_SIZE): Promise<Page> {
+export async function searchUnits(f: SearchFilters, sort: SortKey, cursor: SearchCursor | null = null, pageSize = PAGE_SIZE): Promise<Page> {
   const fetchSize = pageSize * 2
   const eq: QueryConstraint[] = [where('status', '==', 'active')]
   if (f.governorateId) eq.push(where('governorateId', '==', f.governorateId))
@@ -79,14 +110,14 @@ export async function searchUnits(f: SearchFilters, sort: SortKey, cursor: Query
   let reads = 0
   try {
   for (let round = 0; round < MAX_ROUNDS && items.length < pageSize && !done; round++) {
-    const snap = await getDocs(query(db_units(), ...base, ...(cur ? [startAfter(cur)] : []), limit(fetchSize)))
-    reads += snap.size
-    for (const d of snap.docs) {
-      const u = mapUnit(d.id, d.data())
+    const r = await fetchRound(f, sort, cur, fetchSize, base)
+    reads += r.docs.length
+    for (const d of r.docs) {
+      const u = mapUnit(d.id, d.data)
       if (matchesFilters(u, f)) items.push(u)
     }
-    cur = snap.docs.length ? snap.docs[snap.docs.length - 1] : cur
-    if (snap.size < fetchSize) done = true
+    cur = r.next ?? cur
+    if (!r.full) done = true
   }
   } catch (e) {
     if (errCode(e) !== 'failed-precondition' || cursor) throw e
@@ -116,6 +147,12 @@ export async function getUnits(ids: string[]): Promise<Unit[]> {
 }
 
 export async function latestUnits(n = 8): Promise<Unit[]> {
+  if (edgeAvailable()) {
+    try {
+      const r = await fetchEdge<{ docs: { id: string; data: Record<string, unknown> }[] }>(`/api/units?sort=newest&n=${Math.min(48, Math.max(6, n * 2))}`)
+      return r.docs.map((d) => mapUnit(d.id, revive(d.data) as DocumentData)).filter((u) => !isExpired(u.expiresAt)).slice(0, n)
+    } catch { markEdgeDown() }
+  }
   let docs
   try {
     docs = (await getDocs(query(db_units(), where('status', '==', 'active'), orderBy('createdAt', 'desc'), limit(n * 2)))).docs

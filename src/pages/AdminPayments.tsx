@@ -264,6 +264,14 @@ function SweepTab() {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState<string[]>([])
+  const [pm, setPm] = useState<string[] | null>(null)
+  async function checkPaymob() {
+    setBusy(true); setPm(null)
+    try {
+      const r = await apiPost<{ ok: boolean; checks: { label: string; ok: boolean; detail?: string }[] }>('/api/paymob-selftest', {})
+      setPm(r.checks.map((c) => `${c.ok ? '✅' : '❌'} ${c.label}${c.detail ? ` — ${c.detail}` : ''}`))
+    } catch (e) { toast.err(e instanceof ApiError ? e.message : ar.errors.generic) } finally { setBusy(false) }
+  }
   async function run() {
     setBusy(true); setLog([])
     try {
@@ -280,6 +288,10 @@ function SweepTab() {
       <p className="text-sm text-mute">{rt.sweepHint}</p>
       <button type="button" className="btn-primary" disabled={busy} onClick={() => void run()}>{busy ? ar.common.loading : rt.sweepNow}</button>
       {log.length > 0 && <pre dir="ltr" className="text-xs text-mute">ended / move-in / installments / emails{'\n'}{log.join('\n')}</pre>}
+      <hr className="border-line" />
+      <p className="text-sm text-mute">فحص إعدادات Paymob (من غير أي خصم من حد): بيتأكد إن المفاتيح موجودة وإن Paymob بيقبلها وبيرجّع رقم الأوردر.</p>
+      <button type="button" className="btn-ghost" disabled={busy} onClick={() => void checkPaymob()}>فحص اتصال Paymob</button>
+      {pm && <ul className="space-y-1 text-sm">{pm.map((x, i) => <li key={i}>{x}</li>)}</ul>}
     </div>
   )
 }

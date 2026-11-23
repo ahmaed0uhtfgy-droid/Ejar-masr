@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  --c-logo: 11 27 58;
   /* Brand: royal navy + Egyptian gold (from the logo). Token names kept so no component needs renaming:
      nile = gold accent (text/borders), nile-dark = primary button fill (navy in light, gold in dark). */
   --c-ink: 11 27 58;        /* royal navy */
@@ -14,23 +15,30 @@
   --c-nile-dark: 11 27 58;  /* navy button fill */
   --c-sand: 138 99 8;       /* badges */
   --c-danger: 178 42 42;
+  /* per-design typography and shape: overridden by html[data-design] below (Admin > المظهر) */
+  --f-display: 'Reem Kufi';
+  --f-body: 'IBM Plex Sans Arabic';
+  --r-field: 10px;
+  --r-panel: 16px;
+  --r-hero: 28px;
 }
 .dark {
-  --c-ink: 240 235 220;
-  --c-paper: 8 18 40;       /* midnight navy */
-  --c-surface: 14 29 58;
-  --c-line: 36 54 92;
-  --c-mute: 156 168 192;
+  --c-ink: 240 237 230;
+  --c-paper: 15 15 16;       /* near-black charcoal (neutral, not blue) */
+  --c-surface: 26 26 28;
+  --c-line: 58 58 63;
+  --c-mute: 165 165 173;
   --c-nile: 226 184 78;     /* bright gold */
-  --c-nile-dark: 212 165 55; /* gold button fill (navy text) */
+  --c-nile-dark: 212 165 55; /* gold button fill (dark text) */
   --c-sand: 226 184 78;
-  --c-danger: 232 96 96;
+  --c-danger: 240 110 110;
+  --c-logo: 20 20 22;       /* the logo disc follows the theme instead of staying navy */
 }
 
 @layer base {
-  html { font-family: 'IBM Plex Sans Arabic', Tahoma, sans-serif; }
+  html { font-family: var(--f-body), Tahoma, sans-serif; }
   body { @apply bg-paper text-ink antialiased; line-height: 1.8; }
-  h1, h2, h3 { font-family: 'Reem Kufi', Tahoma, sans-serif; line-height: 1.4; }
+  h1, h2, h3 { font-family: var(--f-display), Tahoma, sans-serif; line-height: 1.4; }
   :focus-visible { outline: 3px solid rgb(var(--c-nile)); outline-offset: 2px; border-radius: 6px; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 }
@@ -47,3 +55,89 @@
 }
 
 .leaflet-container { font-family: inherit; direction: ltr; }
+
+/* ---- map: price tags, cluster bubbles and the listing popup (theme-aware) ---- */
+.map-pin { background: transparent; border: 0; }
+.map-pill, .map-cluster { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); font: 600 12px Tahoma, sans-serif; white-space: nowrap; box-shadow: 0 1px 5px rgba(0, 0, 0, .4); }
+.map-pill { background: rgb(var(--c-logo)); color: #F4D98A; border: 2px solid #D4A537; border-radius: 999px; padding: 2px 8px; }
+.map-cluster { display: flex; align-items: center; justify-content: center; min-width: 38px; height: 38px; padding: 0 6px; border-radius: 999px; font-size: 14px; background: rgb(var(--c-nile-dark)); color: #fff; border: 3px solid #D4A537; }
+.dark .map-cluster { color: rgb(var(--c-paper)); }
+.leaflet-marker-icon:focus-visible .map-pill, .leaflet-marker-icon:focus-visible .map-cluster { outline: 3px solid #fff; outline-offset: 2px; }
+.leaflet-popup-content { margin: 10px 12px; color: #14161d; font-family: inherit; }
+.map-popup { display: flex; flex-direction: column; gap: 4px; direction: rtl; text-align: start; font-size: 14px; }
+.map-popup img { width: 100%; height: 110px; object-fit: cover; border-radius: 6px; }
+.map-popup-price { font-weight: 700; color: #8A6308; }
+.map-popup a { color: #0B1B3A; font-weight: 600; text-decoration: underline; }
+
+
+/* =====================================================================================================================
+   SITE DESIGNS: the admin picks one in Admin > المظهر, it is stored in settings/app.design and put on <html data-design>.
+   Everything below only changes colour tokens, fonts, radii and a few component skins, so every page follows the design.
+   (Keep the first :root and .dark blocks above untouched: src/lib/theme.test.ts reads them.)
+   ===================================================================================================================== */
+
+/* ---- classic: ivory page, navy + gold, square-ish corners (light mode only; dark mode keeps the charcoal palette) ---- */
+html[data-design='classic'] { --r-field: 4px; --r-panel: 6px; --r-hero: 10px; }
+html[data-design='classic']:not(.dark) {
+  --c-ink: 20 33 61;
+  --c-paper: 246 242 232;
+  --c-line: 224 215 195;
+}
+html[data-design='classic']:not(.dark) .btn-primary { background: #C9A24B; color: #0A1830; font-weight: 600; }
+html[data-design='classic']:not(.dark) .btn-primary:hover { background: #E6C877; color: #0A1830; }
+
+/* ---- royal: deep navy, gold lattice, Cairo. Always dark (src/lib/design.ts forces the dark class). ---- */
+html[data-design='royal'] {
+  color-scheme: dark;
+  --f-display: 'Cairo';
+  --f-body: 'Cairo';
+  --r-field: 14px;
+  --r-panel: 22px;
+  --r-hero: 32px;
+  --c-ink: 245 247 252;
+  --c-paper: 6 20 49;        /* #061431 */
+  --c-surface: 13 42 87;     /* #0d2a57 */
+  --c-line: 45 79 134;       /* #2d4f86 */
+  --c-mute: 169 186 214;     /* #a9bad6 */
+  --c-nile: 240 207 134;     /* #f0cf86 gold text */
+  --c-nile-dark: 217 164 65; /* #d9a441 gold button fill (dark text) */
+  --c-sand: 240 207 134;
+  --c-danger: 240 110 110;
+  --c-logo: 6 20 49;
+}
+html[data-design='royal'] body {
+  background-image: radial-gradient(ellipse 80% 420px at 50% 0, rgb(26 74 150 / .35), transparent 70%);
+  background-repeat: no-repeat;
+}
+html[data-design='royal'] .btn { border-radius: 999px; font-weight: 700; }
+html[data-design='royal'] .btn-primary { background: linear-gradient(135deg, #f0cf86, #d9a441); color: #2a1a00; }
+html[data-design='royal'] .btn-primary:hover { background: linear-gradient(135deg, #f6dc9f, #e3b255); color: #2a1a00; transform: translateY(-1px); box-shadow: 0 10px 26px #d9a44155; }
+html[data-design='royal'] .btn-ghost { background: transparent; border-color: rgb(217 164 65 / .45); }
+html[data-design='royal'] .btn-ghost:hover { background: rgb(217 164 65 / .14); }
+html[data-design='royal'] .btn-danger { color: #2a0a0a; }
+html[data-design='royal'] .field { background: rgb(255 255 255 / .06); border-color: rgb(217 164 65 / .35); }
+html[data-design='royal'] .field:focus { border-color: #f0cf86; }
+html[data-design='royal'] select option { color: #111; background: #fff; }
+html[data-design='royal'] .panel { border-color: rgb(217 164 65 / .24); transition: box-shadow .3s, border-color .3s; }
+html[data-design='royal'] .panel:hover { border-color: rgb(217 164 65 / .55); box-shadow: 0 18px 40px rgb(0 0 0 / .45); }
+html[data-design='royal'] .chip { border-color: rgb(217 164 65 / .4); background: rgb(255 255 255 / .04); }
+html[data-design='royal'] .chip:hover { background: #d9a441; color: #2a1a00; }
+html[data-design='royal'] .leaflet-container { filter: brightness(.85) contrast(1.05) saturate(.9); }
+
+/* scroll progress line under the very top of the page (both designs) */
+.scroll-bar { position: fixed; top: 0; inset-inline: 0; height: 3px; z-index: 60; pointer-events: none; }
+.scroll-bar > i { display: block; height: 100%; width: 100%; transform-origin: right; transform: scaleX(0); background: linear-gradient(90deg, #C9A24B, #E6C877); }
+
+/* brand wordmark used by the royal header / footer (name, gold rule, English line) */
+.wordmark { display: inline-block; line-height: 1; }
+.wordmark b { display: block; font-family: var(--f-display), Tahoma, sans-serif; font-weight: 900; font-size: 1.5rem; }
+.wordmark i { display: block; height: 2px; background: #d9a441; margin: 4px 0 3px; }
+.wordmark span { display: block; font: 800 11px/1 Montserrat, sans-serif; letter-spacing: .15em; direction: ltr; text-align: start; opacity: .8; }
+
+/* gold diamond lattice used on royal sections */
+.lattice { background-image: linear-gradient(45deg, #d9a44118 1px, transparent 1px), linear-gradient(-45deg, #d9a44118 1px, transparent 1px); background-size: 46px 46px; }
+
+/* reveal-on-scroll (src/lib/motion.ts adds .in) */
+.reveal { opacity: 0; transform: translateY(32px); transition: opacity .9s cubic-bezier(.2, .7, .2, 1), transform .9s cubic-bezier(.2, .7, .2, 1); }
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }

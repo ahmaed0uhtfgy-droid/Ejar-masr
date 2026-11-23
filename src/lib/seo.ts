@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { SITE_URL } from './defaults'
+import { BRAND } from './brand'
 
 function setMeta(attr: 'name' | 'property', key: string, content: string): void {
   let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`)
@@ -11,7 +12,7 @@ export interface PageMeta { title: string; description?: string; noindex?: boole
 
 export function usePageMeta({ title, description, noindex, path, image }: PageMeta): void {
   useEffect(() => {
-    const full = title.includes('إيجار مصر') ? title : `${title} | إيجار مصر`
+    const full = title.includes(BRAND) ? title : `${title} | ${BRAND}`
     document.title = full
     if (description) { setMeta('name', 'description', description); setMeta('property', 'og:description', description) }
     setMeta('property', 'og:title', full)

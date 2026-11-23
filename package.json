@@ -5,13 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p functions/tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore --project ejar-masr-test \"vitest run --config vitest.rules.config.ts\"",
     "gen:data": "node scripts/gen-locations.mjs && node scripts/gen-indexes.mjs",
-    "preview": "wrangler pages dev dist"
+    "preview": "wrangler pages dev dist",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:emulators": "firebase emulators:exec --only auth,firestore --project demo-ejar-e2e \"playwright test\"",
+    "test:all": "npm run typecheck && npm run lint && npm test && npm run test:rules",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "e2e:install": "playwright install --with-deps chromium",
+    "build:e2e": "tsc --noEmit -p tsconfig.build.json && VITE_USE_EMULATORS=true VITE_FIREBASE_API_KEY=e2e-fake-key VITE_FIREBASE_AUTH_DOMAIN=localhost VITE_FIREBASE_PROJECT_ID=demo-ejar-e2e VITE_FIREBASE_APP_ID=1:1:web:e2e vite build"
   },
   "dependencies": {
     "firebase": "^11.0.0",

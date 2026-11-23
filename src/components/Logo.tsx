@@ -17,7 +17,7 @@ export function Logo({ size = 40, uid = 'lg', className }: { size?: number; uid?
         </linearGradient>
       </defs>
       {/* medallion */}
-      <circle cx="60" cy="60" r="57" fill="#0B1B3A" stroke={`url(#${g})`} strokeWidth="4" />
+      <circle cx="60" cy="60" r="57" style={{ fill: 'rgb(var(--c-logo))' }} stroke={`url(#${g})`} strokeWidth="4" />
       <circle cx="60" cy="60" r="50" fill="none" stroke={`url(#${g})`} strokeWidth="1.2" opacity="0.8" />
       {/* network lines (as in the logo) */}
       <g stroke={`url(#${g})`} strokeWidth="0.7" opacity="0.35" fill="none">
@@ -31,7 +31,7 @@ export function Logo({ size = 40, uid = 'lg', className }: { size?: number; uid?
       {/* pyramid */}
       <path d="M60 17 67 27H53Z" fill={`url(#${g})`} />
       {/* skyline towers */}
-      <g fill="#0B1B3A" stroke={`url(#${g})`} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round">
+      <g style={{ fill: 'rgb(var(--c-logo))' }} stroke={`url(#${g})`} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round">
         <path d="M43 88V58l9-6v36" />
         <path d="M52 88V40l10-8 10 6v50" />
         <path d="M72 88V62l16 6v20" />

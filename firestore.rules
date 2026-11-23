@@ -27,6 +27,7 @@ service cloud.firestore {
         && d.images is list && d.images.size() >= cfg().minImages && d.images.size() <= cfg().maxImages
         && d.amenities is list && d.amenities.size() <= 40
         && (!('depositMode' in d) || d.depositMode in ['none', 'held-claim', 'held-auto'])
+        && (!('deposit' in d) || d.deposit == null || (d.deposit is number && d.deposit >= 0 && d.deposit <= 10000000))
         && (d.lat == null || (d.lat is number && d.lat >= 21.5 && d.lat <= 32 && d.lng is number && d.lng >= 24.5 && d.lng <= 37));
     }
     function validContacts(c) {
@@ -57,6 +58,8 @@ service cloud.firestore {
         && request.resource.data.role == 'user' && request.resource.data.banned == false && request.resource.data.verified == false
         && request.resource.data.accountType in ['owner', 'broker']
         && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60
+        // The stored email must be the one on the sign-in token: otherwise anyone could register somebody else's address and make the site email them.
+        && request.resource.data.email is string && request.resource.data.email.lower() == request.auth.token.get('email', '').lower()
         && request.resource.data.createdAt == request.time;
       // Users can only touch displayName / accountType; role, banned and verified are admin-only.
       allow update: if (signedIn() && request.auth.uid == uid

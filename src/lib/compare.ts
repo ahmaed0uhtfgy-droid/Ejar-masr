@@ -24,6 +24,12 @@ export function addToCompare(id: string): 'added' | 'exists' | 'full' {
   return 'added'
 }
 export function removeFromCompare(id: string): void { write(cache.filter((x) => x !== id)) }
+export function clearCompare(): void { write([]) }
+/** One button for both directions: a listing already in the comparison is taken out, otherwise it is added (until the limit). */
+export function toggleCompare(id: string): 'added' | 'removed' | 'full' {
+  if (cache.includes(id)) { removeFromCompare(id); return 'removed' }
+  return addToCompare(id) === 'full' ? 'full' : 'added'
+}
 export function useCompareIds(): string[] {
   return useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb) }, () => cache, () => [])
 }

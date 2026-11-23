@@ -1,5 +1,5 @@
 import type { Env } from '../_lib/env'
-import { commit, getDocument, runQuery } from '../_lib/firestore'
+import { commitGuarded, getDocument, runQuery } from '../_lib/firestore'
 import { HttpError, errorResponse, json, readJson, requireUser } from '../_lib/http'
 import { cairoDayKey, isExpiredDate, isValidDocId } from '../_lib/logic'
 import { buildTerms, toCents } from '../_lib/rent'
@@ -28,6 +28,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const ownerId = String(unit.data.ownerId ?? '')
     if (ownerId === user.uid) throw new HttpError(400, 'own-unit', 'مينفعش تأجّر وحدتك')
 
+    // All of one tenant's requests pass through this gate document, written below with a precondition: parallel requests (double click, two tabs, a script)
+    // all read the same state, but only ONE can commit, so neither the per-unit duplicate check nor the open-requests cap can be raced.
+    const gatePath = `leaseGates/${user.uid}`
+    const gate = await getDocument(env, gatePath)
     const mine = await runQuery(env, { collection: 'leases', where: [{ field: 'tenantId', op: 'EQUAL', value: user.uid }], limit: 100 })
     const open = mine.filter((l) => l.data.status === 'requested' || l.data.status === 'active')
     if (open.some((l) => l.data.unitId === b.unitId)) throw new HttpError(409, 'duplicate', 'عندك طلب أو عقد شغال على الوحدة دي بالفعل')
@@ -42,11 +46,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!terms.ok) throw new HttpError(400, 'bad-terms', terms.message)
 
     const depositMode = rentType === 'monthly' ? depositModeOf(unit.data.depositMode) : 'none'
-    const depositCents = depositMode !== 'none' && Number(unit.data.deposit) > 0 ? toCents(Number(unit.data.deposit)) : 0
+    const depositEgp = Number(unit.data.deposit)
+    // The listing rules do not bound `deposit`; an absurd value (1e15, Infinity) would overflow cents arithmetic and produce an unpayable first installment.
+    if (depositMode !== 'none' && depositEgp > 0 && !(depositEgp <= 10_000_000)) throw new HttpError(400, 'bad-deposit', 'قيمة التأمين في الإعلان غير صحيحة')
+    const depositCents = depositMode !== 'none' && depositEgp > 0 ? toCents(depositEgp) : 0
     const id = newId()
     const now = new Date()
     const tenantName = String(user.data.displayName ?? '').slice(0, 60)
-    await commit(env, [
+    await commitGuarded(env, [
+      gate ? { kind: 'upsert', path: gatePath, data: { at: now } } : { kind: 'create', path: gatePath, data: { at: now } },
       {
         kind: 'create', path: `leases/${id}`,
         data: {
@@ -62,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         },
       },
       notifyWrite(ownerId, `lease_${id}_req`, 'طلب إيجار جديد', `${tenantName || 'مستخدم'} طلب استئجار "${String(unit.data.title ?? '').slice(0, 60)}". راجع الطلب من لوحة المعلن.`, String(b.unitId)),
-    ])
+    ], { [gatePath]: gate?.updateTime })
     return json({ leaseId: id })
   } catch (e) { return errorResponse(e) }
 }

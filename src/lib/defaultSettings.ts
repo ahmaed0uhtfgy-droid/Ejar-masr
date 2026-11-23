@@ -1,6 +1,8 @@
+import { DEFAULT_DESIGN } from './designIds'
 import type { AppSettings } from './types'
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  design: DEFAULT_DESIGN,
   minImages: 1,
   maxImages: 10,
   defaultAdDays: 0,

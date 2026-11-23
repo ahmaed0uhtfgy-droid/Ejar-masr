@@ -16,10 +16,10 @@ export default {
         danger: 'rgb(var(--c-danger) / <alpha-value>)',
       },
       fontFamily: {
-        display: ['"Reem Kufi"', 'Tahoma', 'sans-serif'],
-        body: ['"IBM Plex Sans Arabic"', 'Tahoma', 'sans-serif'],
+        display: ['var(--f-display)', 'Tahoma', 'sans-serif'],
+        body: ['var(--f-body)', 'Tahoma', 'sans-serif'],
       },
-      borderRadius: { field: '10px', panel: '16px', hero: '28px' },
+      borderRadius: { field: 'var(--r-field)', panel: 'var(--r-panel)', hero: 'var(--r-hero)' },
     },
   },
   plugins: [],
