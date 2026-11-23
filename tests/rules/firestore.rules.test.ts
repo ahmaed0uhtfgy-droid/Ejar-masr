@@ -85,7 +85,7 @@ describe('users', () => {
   })
   it('cannot sign up as admin', async () => {
     await assertFails(setDoc(doc(as('carol'), 'users/carol'), profile({ role: 'admin', createdAt: serverTimestamp() })))
-    await assertSucceeds(setDoc(doc(as('carol'), 'users/carol'), profile({ createdAt: serverTimestamp() })))
+    await assertSucceeds(setDoc(doc(env.authenticatedContext('carol', { email: 't@example.com' }).firestore(), 'users/carol'), profile({ createdAt: serverTimestamp() })))
   })
   it('admin can ban and verify', async () => { await assertSucceeds(updateDoc(doc(as('admin'), 'users/bob'), { banned: true, verified: true })) })
 })
@@ -113,5 +113,18 @@ describe('server-only and admin-only collections', () => {
     await assertSucceeds(setDoc(doc(as('admin'), 'auditLogs/a1'), entry))
     await assertFails(updateDoc(doc(as('admin'), 'auditLogs/a1'), { action: 'y' }))
     await assertFails(deleteDoc(doc(as('admin'), 'auditLogs/a1')))
+  })
+})
+
+describe('listing deposit is bounded', () => {
+  const create = (id: string, over: Record<string, unknown>) => setDoc(doc(as('bob'), `units/${id}`), { ...unit('bob', over), createdAt: serverTimestamp() })
+  it('accepts a missing, null or sensible deposit', async () => {
+    await assertSucceeds(create('d1', { deposit: null }))
+    await assertSucceeds(create('d2', { deposit: 6000, depositMode: 'held-claim' }))
+  })
+  it('refuses a negative, absurd or non-numeric deposit (it would make the first installment unpayable)', async () => {
+    await assertFails(create('d3', { deposit: -1 }))
+    await assertFails(create('d4', { deposit: 1e15 }))
+    await assertFails(create('d5', { deposit: 'a lot' }))
   })
 })

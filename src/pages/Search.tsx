@@ -1,14 +1,13 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { addDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore'
-import type { QueryDocumentSnapshot } from 'firebase/firestore'
 import { ar } from '../i18n/ar'
 import { useAuth } from '../contexts/AuthContext'
 import { useSettings } from '../contexts/SettingsContext'
 import { useToast } from '../contexts/ToastContext'
 import { db } from '../lib/firebase'
 import { usePageMeta } from '../lib/seo'
-import { filtersToParams, paramsToFilters, searchUnits } from '../lib/units'
+import { filtersToParams, paramsToFilters, searchUnits, type SearchCursor } from '../lib/units'
 import { isQuotaError } from '../lib/errors'
 import type { SearchFilters, SortKey, Unit } from '../lib/types'
 import { FiltersPanel } from '../components/FiltersPanel'
@@ -26,14 +25,14 @@ export default function Search() {
   const { markQuota } = useSettings()
   const toast = useToast()
   const [items, setItems] = useState<Unit[]>([])
-  const [cursor, setCursor] = useState<QueryDocumentSnapshot | null>(null)
+  const [cursor, setCursor] = useState<SearchCursor | null>(null)
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<unknown>(null)
   const [showFilters, setShowFilters] = useState(false)
   const reqId = useRef(0)
 
-  const load = useCallback(async (reset: boolean, cur: QueryDocumentSnapshot | null) => {
+  const load = useCallback(async (reset: boolean, cur: SearchCursor | null) => {
     const id = ++reqId.current
     setLoading(true); setErr(null)
     try {

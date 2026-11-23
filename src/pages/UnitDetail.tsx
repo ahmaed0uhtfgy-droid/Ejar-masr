@@ -7,7 +7,7 @@ import { useToast } from '../contexts/ToastContext'
 import { ApiError, apiPost } from '../lib/api'
 import { fmtDate, fmtNum, fmtPrice, isExpired, toWhatsAppNumber } from '../lib/format'
 import { images } from '../lib/images'
-import { addToCompare } from '../lib/compare'
+import { toggleCompare, useCompareIds } from '../lib/compare'
 import { SITE_URL } from '../lib/defaults'
 import { usePageMeta } from '../lib/seo'
 import { getUnit } from '../lib/units'
@@ -26,6 +26,7 @@ export default function UnitDetail() {
   const { id = '' } = useParams()
   const { user, profile, isAdmin, banned, favorites, toggleFavorite } = useAuth()
   const { settings, locations, markQuota } = useSettings()
+  const compareIds = useCompareIds()
   const toast = useToast()
   const [unit, setUnit] = useState<Unit | null | undefined>(undefined)
   const [err, setErr] = useState<unknown>(null)
@@ -56,11 +57,15 @@ export default function UnitDetail() {
     image: unit?.images[0] ? images.url(unit.images[0], { w: 1200, h: 630 }) : undefined,
   })
 
-  // One view per unit per browser session (see /api/view for server-side throttling).
+  // One view per unit per browser per 6 hours: the call is skipped entirely when it was already counted (see /api/view for server-side throttling).
   useEffect(() => {
     if (!unit || unit.status !== 'active' || !settings.trackViews || privileged) return
     const k = `ejar:viewed:${unit.id}`
-    try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1') } catch { /* ignore */ }
+    try {
+      const t = Number(localStorage.getItem(k))
+      if (t && Date.now() - t < 6 * 3600_000) return
+      localStorage.setItem(k, String(Date.now()))
+    } catch { /* ignore */ }
     apiPost('/api/view', { unitId: unit.id }).catch(() => undefined)
   }, [unit, settings.trackViews, privileged])
 
@@ -123,6 +128,18 @@ export default function UnitDetail() {
           <section className="mt-8">
             <h2 className="font-display text-xl">{ar.unit.location}</h2>
             <p className="mt-2 text-mute">{unit.governorateName} — {unit.areaName}{locality ? ` — ${locality}` : ''}</p>
+            {(() => {
+              // Real links to the governorate / type pages: good for visitors who want more like this, and the internal links search engines follow.
+              const g = locations.govs.find((x) => x.id === unit.governorateId)
+              const t = settings.unitTypes.find((x) => x.id === unit.typeId)
+              if (!g) return null
+              return (
+                <nav aria-label="مزيد من الوحدات" className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                  <Link className="text-nile underline" to={`/rent/${g.slug}`}>{ar.landing.titleGov(g.name)}</Link>
+                  {t && <Link className="text-nile underline" to={`/rent/${g.slug}/${t.id}`}>{ar.landing.titleType(t.plural ?? t.label, g.name)}</Link>}
+                </nav>
+              )
+            })()}
             {unit.address && <p className="text-mute">{ar.unit.address}: {unit.address}</p>}
             <div className="mt-3">
               {unit.lat != null && unit.lng != null
@@ -178,7 +195,7 @@ export default function UnitDetail() {
 
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-ghost !px-3 !py-1.5 text-sm" aria-pressed={fav} onClick={() => { if (!user) { toast.err(ar.auth.loginRequired); return } toggleFavorite(unit.id).catch(() => toast.err(ar.errors.generic)) }}>{fav ? '♥' : '♡'} {fav ? ar.unit.unfavorite : ar.unit.favorite}</button>
-              <button type="button" className="btn-ghost !px-3 !py-1.5 text-sm" onClick={() => { const r = addToCompare(unit.id); toast[r === 'full' ? 'err' : 'ok'](r === 'full' ? ar.compare.max : ar.unit.inCompare) }}>{ar.unit.compare}</button>
+              <button type="button" className="btn-ghost !px-3 !py-1.5 text-sm" aria-pressed={compareIds.includes(unit.id)} onClick={() => { const r = toggleCompare(unit.id); if (r === 'full') toast.err(ar.compare.max); else toast.ok(r === 'added' ? ar.unit.addedCompare : ar.unit.removedCompare) }}>{compareIds.includes(unit.id) ? `✕ ${ar.unit.removeCompare}` : ar.unit.compare}</button>
               <button type="button" className="btn-ghost !px-3 !py-1.5 text-sm" onClick={() => void share()}>{ar.unit.share}</button>
               <a className="btn-ghost !px-3 !py-1.5 text-sm" target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`${unit.title} ${shareUrl}`)}`}>{ar.unit.shareWa}</a>
             </div>
